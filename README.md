@@ -33,7 +33,7 @@ $  ./vland  arch  -nx  --  chromium
 *  In the command `./vland  arch  -nx`, the `-nx` option grants network access and shares the host's Xorg server.
 *  All of the options after `./vland arch` are simply passed through to `lxroot`.
 *  At present `vland` can create `alpine`, `arch`, `void` and `void-musl` userlands.
-*  I expect it would be both technically possible and straightforward to extend `vland` to support architecures beyond `x86_64`.
+*  It should be fairly straightforward to extend `vland` to support architecures beyond `x86_64`.
 
 The full syntax of the two `./vland` commands in the above example is:
 
