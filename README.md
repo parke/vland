@@ -12,6 +12,6 @@ More specifically:
 `vland`'s virutalization is provided via [Lxroot](https://github.com/parke/lxroot).  (Lxroot itself uses unprivileged Linux namespaces.)  Both `vland` and Lxroot are designed to be lightweight and flexible.  `vland` is, more or less, an opinionated, high level, convenience wrapper around Lxroot, with some added bells and whistles.
 
 For more information, please see the following pages:
-*  [tutorial](tutorial) - download, installation, and usage tutorials
-*  [man page](manpage) - the man page for `vland`
-*  [wiki](/parke/lxroot/wiki) - the Lxroot wiki contains additional information
+*  [tutorial](https://github.com/parke/vland/wiki/tutorial) - download, installation, and usage tutorials
+*  [man page](https://github.com/parke/vland/wiki/man_page) - the man page for `vland`
+*  [wiki](https://github.com/parke/lxroot/wiki) - the Lxroot wiki contains additional information
