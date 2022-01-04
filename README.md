@@ -16,6 +16,7 @@
 
 ### Learn more
 
+*  [use cases](https://github.com/parke/lxroot/wiki/use_cases)
 *  [tutorial](https://github.com/parke/vland/wiki/tutorial) - installation and usage
 *  [man page](https://github.com/parke/vland/wiki/man_page)
 *  [wiki](https://github.com/parke/lxroot/wiki)
