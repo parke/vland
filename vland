@@ -6,7 +6,7 @@
 #  Distributed under GPLv3 (see end of file) WITHOUT ANY WARRANTY.
 
 
-readonly  VLAND_VERSION='0.21.0'    #  20211229
+readonly  VLAND_VERSION='0.21.0  20220110'    #  20220110
 
 
 #  vland.sh expects /bin/sh to be dash (or busybox or bash).
@@ -14,85 +14,120 @@ readonly  VLAND_VERSION='0.21.0'    #  20211229
 
 set  -o errexit
 
+readonly  VLAND_PATH="$(  realpath  "$0"  )"
+
 
 help_common  ()  {    #  ----------------------------------------  help_common
+  echo  \
+"
+usage:  vland  --operation  [option ...]
+        vland  overlay  [guest]  [option ...]  [-- command ...]
 
-  echo
-  echo  'usage:  vland  --create  distro  [userland]  [overlay]'
-  echo  '        vland  userland  [overlay]  [option ...]  [-- command ...]'
-
-  return  ;  }
+mini tutorial:
+$  vland  --create  arch    #  Create an Arch Linux guest named 'arch'.
+$  vland  arch  -nr         #  Enter the 'arch' guest as root."  ;  }
 
 
 help  ()  {    #  ------------------------------------------------------  help
-
   help_common
-
-  echo
-  echo  'For more help, please run:  vland  --help-more'
-
-  return  ;  }
+  echo  ;  echo  'For more help, please run:  vland  --help-more'  ;  }
 
 
 help_more  ()  {    #  --------------------------------------------  help_more
+  echo  \
+"
+usage:  vland  --operation  [option ...]
+        vland  overlay  [guest]  [option ...]  [-- command ...]
 
-  help_common
+an example:
+$  vland  --create  arch    #  Create an Arch Linux guest named 'arch'.
+$  vland  arch  -nr         #  Enter the 'arch' guest as root.
 
-  echo
-  echo  'To create a userland and overlay, run:'
-  echo  '$  vland  --create  distro  [userland]  [overlay]'
-  echo  'If not specified, userland=distro and overlay=userland.'
-  echo
-  echo  'To run a shell (or a commend) in a userland, run:'
-  echo  '$  vland  overlay  [userland]  [option ...]  [-- command [arg ...]]'
-  echo  'If not specified, overlay=userland.'
-  echo  'Any specified options are simply passed through to lxroot.'
-  echo  'Please refer to the Lxroot documentation for details.'
-  echo
-  echo  'Supported Distros'
-  echo  'alpine     Alpine Linux'
-  echo  'arch       Arch Linux'
-  echo  'void       Void Linux'
-  echo  'void-musl  Void Linux (musl libc)'
-  echo
-  echo  'An Example'
-  echo  '$  vland  --create  arch    #  Create an Arch Linux userland.'
-  echo  '$  vland  arch  -nr         #  Enter the arch userland as root.'
-  echo
-  echo  'Fyi, the default location for userlands and overlays is either:'
-  echo  '$HOME/vland  or  /vland'
-  echo
-  echo  'undocumented commands (read the source to see what they do)'
-  echo  '  vland  --alpine-sdk  userland'
-  echo  '  vland  --download  distro'
-  echo  '  vland  --list'
-  echo  '  vland  --overlay  overlay  userland'
-  echo
-  echo  'internal testing commands (read the source to see what they do)'
-  echo  '  vland  --aria2c-install'
+To create a guest and overlay, run:
+$  vland  --create  distro  [guest]  [overlay]
+If not specified, guest   defaults to distro.
+If not specified, overlay defaults to guest.
+
+To run a shell (or a command) in a guest, run:
+$  vland  overlay  [guest]  [option ...]  [-- command [arg ...]]
+If guest is not specified, the overlay's default guest will be used.
+Any specified options are simply passed through to lxroot.
+If no command is specified, vland will run an interactive shell in the guest.
+
+Common lxroot options:
+-n    grant the guest access to the host's network interfaces
+-r    simulate uid = 0 (root)
+-w    grant full write access (even to a non-root user)
+-x    grant the guest access to the host's Xorg server
+For additional lxroot options, please see the lxroot documentation.
+
+Supported distros:
+alpine     Alpine Linux
+arch       Arch Linux
+void       Void Linux
+void-musl  Void Linux (with musl libc)
+
+Fyi, the default location for guests and overlays is either:
+\$HOME/.local/vland  or  /vland/\$USER
+
+
+operations                     options
+
+--download  distro
+--list
+
+--pkg       overlay  [guest]  action  [--]  [package ...]
+--aur       overlay  [guest]  action  [--]  [package ...]
+
+
+
+--alpine-pkg-install          overlay  [guest]  [-- package ...]
+--alpine-pkg-build            overlay  [guest]  [-- package ...]
+--alpine-pkg-build-install    overlay  [guest]  [-- package ...]
+--alpine-pkg-deps
+
+--arch-pkg-install            overlay  [guest]  [-- package ...]
+--arch-pkg-build              overlay  [guest]  [-- package ...]
+--arch-pkg-build-install      overlay  [guest]  [-- package ...]
+--arch-pkg-deps               overlay  [guest]  [-- package ...]
+--arch-aur-build              overlay  [guest]  [-- aur_package ...]
+--arch-aur-install            overlay  [guest]  [-- aur_package ...]
+--arch-aur-deps               overlay  [guest]  [-- aur_package ...]"
 
   return  ;  }
 
 
 main  ()  {    #  ------------------------------------------------------  main
 
-  main_machine_check
+  main_cpu_check
   main_config_load
 
   case  "$1"  in
-    ( ''               )  main_status           ;;
-    ( --alpine-sdk     )  alpine_sdk      "$@"  ;;
-    ( --aria2c-install )  aria2c_install        ;;
-    ( --help           )  help                  ;;
-    ( --help-more      )  help_more             ;;
-    ( --create         )  create          "$@"  ;;
-    ( --download       )  main_download   "$@"  ;;
-    ( --list           )  main_list             ;;
-    ( --self-test      )  self_test             ;;
-    ( --version        )  main_version          ;;
-    ( --*              )  die  "vland  error  invalid option  '$1'"  ;;
-    ( *                )  launch  "$@"  ;;
+
+    (  ''           )  main_status   ;  exit  ;;
+    (  --help       )  help          ;  exit  ;;
+    (  --help-more  )  help_more     ;  exit  ;;
+    (  --version    )  main_version  ;  exit  ;;
+
+    (  --aur        )  pkg            "$@"    ;;
+    (  --create     )  create         "$@"    ;;
+    (  --download   )  main_download  "$@"    ;;
+    (  --pkg        )  pkg            "$@"    ;;
+    (  --list       )  main_list              ;;
+    #  --overlay    )  TODO                   ;;
+
+    #  undocumented internal commands
+    (  --aria2c-install  )  aria2c_install  ;;
+    (  --lxroot-install  )  lxroot_install  ;;
+    (  --self-test       )  self_test       ;;
+    (  --self-test-full  )  self_test-full  ;;
+
+    #  wildcard commands
+    (  --*  )  die  "vland  error  invalid option  '$1'"  ;;
+    (  *    )  main_launch  "$@"  ;;
     esac
+
+  echo  "vland  done  '$*'"
 
   exit  ;  }
 
@@ -100,12 +135,13 @@ main  ()  {    #  ------------------------------------------------------  main
 ###  vland global variables  -------------------------  vland global variables
 #
 #  over_name    the name of the overlay
-#  land_name    the name of the userland
+#  land_name    the name of the userland (i.e. the name of the guest)
 #  distro       the name of the distro
 #
-#  vland_dir    typically:  $HOME/vland  or  /vland/$USER
+#  vland_dir    typically:  $HOME/.local/vland  or  /vland/$USER
 #  over         typically:  $vland_dir/over/$over_name
 #  land         typcially:  $vland_dir/land/$land_name
+#  over_home    typically:  $over/${HOME#/}
 #
 #  tgz_url      typically:  the url of distro rootfs tarball
 #  tgz          typically:  the filename portion of $tgz_url
@@ -120,19 +156,28 @@ main_config_load  ()  {    #  ------------------------------  main_config_load
 
 
 main_config_vland_dir  ()  {    #  --------------------  main_config_vland_dir
-  [    "$vland_dir"       ]  &&  {  echo  "$vland_dir"    ;  return  ;  }
-  [ -d "$HOME/vland/land" ]  &&  {  echo  "$HOME/vland"   ;  return  ;  }
-  [ -d "/vland"           ]  &&  {  echo  "/vland/$USER"  ;  return  ;  }
-  echo  "$HOME/vland"  ;  }
+  #  usage:  main_config_vland_dir
+  local  hlv="$HOME"/.local/vland
+  [    "$vland_dir"   ]  &&  {  echo  "$vland_dir"    ;  return  ;  }
+  [ -d "$hlv/land"    ]  &&  {  echo  "$hlv"          ;  return  ;  }
+  [ -d "/vland/$USER" ]  &&  {  echo  "/vland/$USER"  ;  return  ;  }
+  echo  "$hlv"  ;  }
+
+
+main_cpu_check  ()  {    #  ----------------------------------  main_cpu_check
+  local  cpu="$(  uname  -m  )"
+  [ "$cpu" = 'x86_64' ]  &&  return
+  die  "vland  error  unsupported cpu type  '$machine'"  ;  }
 
 
 main_download  ()  {    #  ------------------------------------  main_download
   #  usage:  main_download  --download  distro
   case  "$2"  in
-    ( alpine    )  alpine_download     ;  alpine_verify     ;;
-    ( arch      )  arch_download       ;  arch_verify       ;;
-    ( void      )  void_download       ;  void_verify       ;;
-    ( void-musl )  void_musl_download  ;  void_musl_verify  ;;
+    ( alpine      )  alpine_download       ;  alpine_verify       ;;
+    ( arch        )  arch_download         ;  arch_verify         ;;
+    ( ubuntu-2110 )  ubuntu_2110_download  ;  ubuntu_2110_verify  ;;
+    ( void        )  void_download         ;  void_verify         ;;
+    ( void-musl   )  void_musl_download    ;  void_musl_verify    ;;
     ( * )  die  "vland  error  download unsupported  '$2'"  ;;
    esac  }
 
@@ -145,18 +190,9 @@ main_list  ()  {    #  --------------------------------------------  main_list
   return  ;  }
 
 
-main_machine_check  ()  {    #  --------------------------  main_machine_check
-  local  machine="$(  uname  -m  )"
-  [ "$machine" = 'x86_64' ]  &&  return
-  die  "vland  error  unsupported machine type  '$machine'"  ;  }
-
-
 main_status  ()  {    #  ----------------------------------------  main_status
 
-  echo
-  echo  -n  'usage:  vland  overlay  [userland]  [option ...]  '
-  echo                        '[-- command [arg ...]]'
-  echo      '        vland  --help'
+  help_common
 
   echo
   echo  'available overlays'
@@ -178,16 +214,18 @@ create_init  ()  {    #  ----------------------------------------  create_init
   land_name="${3:-$distro}"
   over_name="${4:-$land_name}"
   land="$vland_dir/land/$land_name"
-  over="$vland_dir/over/$over_name"  ;  }
+  over="$vland_dir/over/$over_name"
+  over_home="$over/${HOME#/}"  ;  }
 
 
 create_userland  ()  {    #  --------------------------------  create_userland
   #  usage:  create_userland
   case  "$distro"  in
-    ( alpine    )  alpine_create     ;  return  ;;
-    ( arch      )  arch_create       ;  return  ;;
-    ( void      )  void_create       ;  return  ;;
-    ( void-musl )  void_musl_create  ;  return  ;;
+    ( alpine      )  alpine_create       ;  return  ;;
+    ( arch        )  arch_create         ;  return  ;;
+    ( ubuntu-2110 )  ubuntu_2110_create  ;  return  ;;
+    ( void        )  void_create         ;  return  ;;
+    ( void-musl   )  void_musl_create    ;  return  ;;
     esac
   die  "vland  error  unsupported distro  '$distro'"  ;  }
 
@@ -195,7 +233,9 @@ create_userland  ()  {    #  --------------------------------  create_userland
 create_overlay  ()  {    #  ----------------------------------  create_overlay
   #  usage:  create_overlay
   echo  'create_overlay'
-  trace_mkdir_p  "$over"  ;  }
+  [ -d "$over" ]  &&  return
+  trace_mkdir_p  "$over"
+  trace  echo  "distro='$distro'"  >  "$over"/vland.conf  ;  }
 
 
 create  ()  {    #  --------------------------------------------------  create
@@ -206,58 +246,78 @@ create  ()  {    #  --------------------------------------------------  create
   echo  ;  echo  "vland  done  '$*'"  ;  }
 
 
-#  launch  -----------------------------------------------------------  launch
+#  lxr & main_launch  -------------------------------------  lxr & main_launch
 
 
-launch_init_land  ()  {    #  ------------------------------  launch_init_land
-
+lxr_init_land  ()  {    #  ------------------------------------  lxr_init_land
   #  usage:  launch_init_land
-
   [ -d "$land" ]  ||  die  "vland  error  userland not found  '$land_name'"
-
   #  todo  add $USER to /etc/passwd
-
   return  ;  }
 
 
-launch_init_over  ()  {    #  ------------------------------  launch_init_over
-
+lxr_init_over  ()  {    #  ------------------------------------  lxr_init_over
   #  usage:  launch_init_over
-
   [ -d "$over" ]  ||  die  "vland  error  overlay not found  '$over_name'"
-
   #  20211221  todo  read $HOME from $land/etc/passwd
   #  20211227  todo  add  $USER to   $land/etc/passwd
-
-  mkdir  -p  "$over/$HOME"
+  mkdir  -p  "$over_home"
   mkdir  -p  "$over/root"
   mkdir  -p  "$over/tmp/.X11-unix"
-
   return  ;  }
 
 
-launch_shift  ()  {    #  --------------------------------------  launch_shift
+lxr_xauth_copy  ()  {    #  ----------------------------------  lxr_xauth_copy
+  #  usage:  lxr_xauth_copy
+  local  src="$HOME/.Xauthority"  dst="$over_home/.Xauthority"
+  [ -f "$src" ]  ||  return  0
+  cmp  --silent  "$src"  "$dst"  &&  return
+  trace  cp  "$src"  "$dst"  ;  }
+
+
+lxr_xauth  ()  {    #  ---------------------------------------------  lxr_auth
+  #  usage:  lxr_preapre  [option ...]  [-- command [arg ...]]
+  while  [ "$1" ]  ;  do
+    case  "$1"  in
+      ( --    )  return          ;;
+      ( --x11 )  lxr_xauth_copy  ;;
+      ( --*   )  ;;    #  skip
+      ( -*x*  )  lxr_xauth_copy  ;;
+      esac
+    shift  ;  done  ;  }
+
+
+lxr_prepare  ()  {    #  ----------------------------------------  lxr_prepare
+  #  usage:  lxr_preapre  [option ...]  [-- command [arg ...]]
+  lxr_init_over
+  lxr_init_land
+  lxr_xauth  "$@"
+  lxroot_install  ;  }
+
+
+lxr  ()  {    #  --------------------------------------------------------  lxr
+  #  usage:  lxr_exec  [option ...]  [-- command [arg ...]]
+  lxr_prepare  "$@"  ;  "$lxroot"  "$land"  "$over"  "$@"  ;  }
+
+
+lxr_exec  ()  {    #  ----------------------------------------------  lxr_exec
+  #  usage:  lxr_exec  [option ...]  [-- command [arg ...]]
+  lxr_prepare  "$@"  ;  exec  "$lxroot"  "$land"  "$over"  "$@"  ;  }
+
+
+main_launch_shift  ()  {    #  ----------------------------  main_launch_shift
   #  usage:  launch_shift  "$1"
   case  "$1"  in
     ( -* | '' )  return  1  ;;    #  don't discard these
     esac  ;  }                    #  discard everything else
 
 
-launch  ()  {    #  --------------------------------------------------  launch
-
-  #  usage:  launch  over  [land]  [option ...]
-
+main_launch  ()  {    #  ----------------------------------------  main_launch
+  #  usage:  main_launch  over  [land]  [option ...]  [-- command ...]
   overlay_parse  "$@"
-  launch_init_land
-  launch_init_over
-
-  launch_shift  "$1"  &&  shift    #  discard  over
-  launch_shift  "$1"  &&  shift    #  discard  land
-
-  lxroot_install
-  trace  exec  "$lxroot"  "$land"  "$over"  "$@"
-
-  return  ;  }
+  main_launch_shift  "$1"  &&  shift    #  discard  over
+  main_launch_shift  "$1"  &&  shift    #  discard  land
+  lxr_exec  "$@"  ;  }
 
 
 #  lib  -----------------------------------------------------------------  lib
@@ -294,6 +354,13 @@ aria2c_install  ()  {    #  ----------------------------------  aria2c_install
 
   lib_verify  "$aria2c"  "$sha"    sha256sum
   lib_verify  "$aria2c"  "$b2"     b2sum  -l 256  ;  }
+
+
+cmp  ()  {    #  --------------------------------------------------------  cmp
+  #  usage:  cmp  [--silent]  file1  file2
+  #  busybox cmp lacks '--silent' but has '-s'
+  [ "$1" = '--silent' ]  &&  {  command  cmp  -s  "$2"  "$3"  ;  return  ;  }
+  command  cmp  "$@"  ;  }
 
 
 die  ()  {    #  --------------------------------------------------------  die
@@ -338,9 +405,9 @@ lib_download_grep_aria  ()  {    #  ------------------  lib_download_grep_aria
 
 lib_download_multi  ()  {    #  --------------------------  lib_download_multi
 
-  #  usage:  lib_download_multi  filename  seeds  dest_path
+  #  usage:  lib_download_multi  seeds  src_path  dest_path
 
-  local  filename="$1"  seeds="$2"  dest_path="$3"
+  local  seeds="$1"  src_path="$2"  dest_path="$3"
 
   [ -e "$dest_path" ]  &&  return
 
@@ -350,9 +417,9 @@ lib_download_multi  ()  {    #  --------------------------  lib_download_multi
   trace_mkdir_p  "$dest_dir"
 
   local  urls="$(
-    for  seed  in  $seeds  ;  do  echo  "$seed/$filename"  ;  done  )"
+    for  seed  in  $seeds  ;  do  echo  "$seed/$src_path"  ;  done  )"
 
-  echo  ;  echo  "lib_download_multi  seeds(${#seeds})  $filename  ..."
+  echo  ;  echo  "lib_download_multi  seeds(${#seeds})  $src_path  ..."
 
   "$aria2c"  --dir="$dest_dir"  --split=40  --min-split-size=1M  \
       --summary-interval=1  $urls  |  lib_download_grep_aria  ;  }
@@ -391,12 +458,6 @@ lib_verify  ()  {    #  ------------------------------------------  lib_verify
   exit  1  ;  }
 
 
-lxr  ()  {    #  --------------------------------------------------------  lxr
-  #  usage:  lxr  [option ...]  [ -- command [arg ...]]
-  lxroot_install
-  trace  "$lxroot"  "$land"  "$over"  "$@"  ;  }
-
-
 lxroot_install  ()  {    #  ----------------------------------  lxroot_install
 
   #  usage:  lxroot_install
@@ -405,13 +466,14 @@ lxroot_install  ()  {    #  ----------------------------------  lxroot_install
 
   [ "$( which lxroot )" ]  &&  {  readonly  lxroot='lxroot'  ;  return  ;  }
 
-  local  url_base='https://github.com/parke/lxroot/releases/download/0.21.0'
-  local  url="$url_base/lxroot-x86"
+  local  lxr_ver='0.22.0'
+  local  url_base='https://github.com/parke/lxroot/releases/download'
+  local  url="$url_base/$lxr_ver/lxroot-x86"
   local  path="$vland_dir/dist/bin/lxroot-x86"
-  local  md5='8092c46013c130baaac4200a7d67ed16'
-  local  sha='ea58e53d2d237ed2a11af1029d4f668c938e4ea1dc45f7681de9f441048394ac'
-  local  sha3='c620136aa93839041515a63b27289a6c31ed29605f7099c01f46b5ee'
-  local  b2='d6543397b0573b8b49ab48d60bfe09d1710d80149747687e21eed0a32f030ae2'
+  local  md5='04821ce1b8a69b8a26b6f9f39c3faa17'
+  local  sha='b29ecc05c6b1fb1f525b8687567820ce28a4eea7fb0b187d9e4927c0de4590e5'
+  local  sha3='e45d01daae157ff65110872790618168a2b9391897e6021043f0471c'
+  local  b2='7acf5a46d81cd72db2e6bf88e3199fe5d5a9503409990757a8cf678fedb83a77'
 
   lib_download  "$url"  "$path"
   lib_verify    "$path"  "$md5"   md5sum
@@ -441,7 +503,10 @@ overlay_parse  ()  {    #  ------------------------------------  overlay_parse
   [ "$vland_dir" ]  ||  die  "vland  internal error  vland_dir not set"
 
   over="$vland_dir/over/$over_name"
-  land="$vland_dir/land/$land_name"  ;  }
+  land="$vland_dir/land/$land_name"
+  over_home="$over/${HOME#/}"    #  a potentially unsafe assumption
+
+  if  [ -f "$over"/vland.conf ]  ;  then  .  "$over"/vland.conf  ;  fi  }
 
 
 pinwheel  ()  {    #  ----------------------------------------------  pinwheel
@@ -463,9 +528,12 @@ pinwheel  ()  {    #  ----------------------------------------------  pinwheel
 resolv_conf_sync  ()  {    #  ------------------------------  resolv_conf_sync
   #  usage:  resolv_conf_sync  path/to/userland/etc/resolv.conf
   if  [ -h "$1" ]  ;  then  trace  rm  "$1"  ;  fi
-  #  busybox cmp lacks '--silent' but has '-s'
-  if  cmp  -s  /etc/resolv.conf  "$1"  ;  then  return  ;  fi
+  if  cmp  --silent  /etc/resolv.conf  "$1"  ;  then  return  ;  fi
   trace  cp  /etc/resolv.conf  "$1"  ;  }
+
+
+techo  ()  {    #  ----------------------------------------------------  techo
+  echo  "$@"  ;  }    #  temporary echo, for use only during development
 
 
 trace  ()  {    #  ----------------------------------------------------  trace
@@ -483,27 +551,105 @@ trace_mkdir_p_dirname  ()  {    #  --------------------  trace_mkdir_p_dirname
   trace_mkdir_p  "${1%/*}"  ;  }
 
 
+vland  ()  {    #  ----------------------------------------------------  vland
+  [ -x "$VLAND_PATH" ]  &&  {  "$VLAND_PATH"  "$@"  ;  return  ;  }
+  /bin/sh  "$VLAND_PATH"  "$@"  ;  }
+
+
 xray  ()  {    #  ------------------------------------------------------  xray
 
   #  usage:  xray  function_name  [arg ...]
 
-  echo
   echo  "xray  $1"  ;  [ "$1" ]  &&  shift
-  echo
-  echo  "  args       '$*'  $#"
-  echo
-  echo  "  over_name  '$over_name'"
-  echo  "  land_name  '$land_name'"
-  echo  "  distro     '$distro'"
-  echo
-  echo  "  vland_dir  '$vland_dir'"
-  echo  "  over       '$over'"
-  echo  "  land       '$land'"
-  echo  "  dist_path  '$dist_path'"
-  echo
-  echo  "  real  vland_dir  '$(  realpath  "$vland_dir"  )'"
-  echo  "  real  over       '$(  realpath  "$over"       )'"
-  echo  "  real  land       '$(  realpath  "$land"       )'"  ;  }
+  echo  "  args   args       '$*'  $#"
+  echo  "  names  over_name  '$over_name'"
+  echo  "         land_name  '$land_name'"
+  echo  "         distro     '$distro'"
+  echo  "  paths  vland_dir  '$vland_dir'"
+  echo  "         over       '$over'"
+  echo  "         over_home  '$over_home'"
+  echo  "         land       '$land'"
+  echo  "         dist_path  '$dist_path'"
+  echo  "  real   vland_dir  '$(  realpath  -q  "$vland_dir"  )'"
+  echo  "         over       '$(  realpath  -q  "$over"       )'"
+  echo  "         land       '$(  realpath  -q  "$land"       )'"  ;  }
+
+
+#  pkg  -----------------------------------------------------------------  pkg
+
+
+pkg_aur  ()  {    #  ------------------------------------------------  pkg_aur
+  case  "$distro"  in
+    ( arch )  distro='arch_aur'  ;;
+    ( *    )  die  "vland --aur  invalid distro  '$distro'"  ;;  esac  }
+
+
+pkg_parse  ()  {    #  --------------------------------------------  pkg_parse
+
+  case  "$#"  in
+    (1)  die  "vland --pkg  invalid overlay  ''"  ;;
+    (2)  die  "vland --pkg  invalid action  ''"  ;;  esac
+
+  case  "$4"  in
+    ( update | install | deps | build | build_install )
+      overlay_parse  "$2"  "$3"  ;  action="$4"  shift='4'  ;;
+    ( * )
+      overlay_parse  "$2"        ;  action="$3"  shift='3'  ;;
+    esac
+
+  [ "$action" = 'build-install' ]  &&  action='build_install'
+  [ "$1" = '--aur' ]  &&  pkg_aur  ;  return  0  ;  }
+
+
+pkg_sanity  ()  {    #  ------------------------------------------  pkg_sanity
+
+  [ -d "$over" ]  ||  die  "vland --pkg  overlay not found  '$over_name'"
+  [ -d "$land" ]  ||  die  "vland --pkg  guest not found  '$guest_name'"
+
+  case  "$distro"  in
+    ( alpine | arch | arch_aur | void | void_musl )  ;;
+    ( * )  die  "vland --pkg  invalid distro  '$distro'"  ;;  esac
+
+  case  "$action"  in
+    ( update | install | upgrade | deps | build | build_install )  ;;
+    ( * )  die  "vland --pkg  invalid action  '$action'"  ;;  esac  ;  }
+
+
+pkg_prelude  ()  {    #  ----------------------------------------  pkg_prelude
+  case  "$distro"  in  ( alpine | arch | arch_aur | void | void_musl )
+    #  case  "$action"  in  ( update | install | deps | build | build_install )
+    #    pkg_try  "$distro"_pkg_prepare  ;;  esac
+    case  "$action"  in  ( update )
+      "$distro"_pkg_update  ;;  esac
+    case  "$action"  in  ( deps | build | build_install )
+      "$distro"_pkg_build_prepare  ;;  esac  ;;  esac  ;  }
+
+
+pkg_packages  ()  {    #  --------------------------------------  pkg_packages
+  #  usage:  pkg  --pkg  overlay  [guest]  action  [--]  package
+  shift  "$shift"  ;  [ "$1" = '--' ]  &&  shift
+  ###  echo  "pkg_packages  '$*'"
+  case  "$distro"  in  ( alpine | arch | arch_aur | void | void_musl )
+    while  [ "$1" ]  ;  do
+      local  pkg="$1"  ;  shift
+      case  "$action"  in  ( install )
+        "$distro"_pkg_install  "$pkg"  ;;  esac
+      case  "$action"  in  ( deps | build | build_install )
+        "$distro"_pkg_deps  "$pkg"  ;;  esac
+      case  "$action"  in  ( build | build_install )
+        "$distro"_pkg_build  "$pkg"  ;;  esac
+      case  "$action"  in  ( build_install )
+        "$distro"_pkg_build_install  "$pkg"  ;;  esac
+      done  ;  esac  ;  }
+
+
+pkg  ()  {    #  --------------------------------------------------------  pkg
+  #  usage:  pkg  --pkg  overlay  [guest]  action  [--]  package
+  local  action  shift
+  pkg_parse     "$@"
+  pkg_sanity
+  pkg_prelude   "$@"
+  pkg_packages  "$@"  ;  }
 
 
 
@@ -571,48 +717,100 @@ alpine_create  ()  {    #  ------------------------------------  alpine_create
   echo  ;  echo  'vland  alpine_create  done'  ;  }
 
 
-alpine_sdk  ()  {    #  ------------------------------------------  alpine_sdk
+#  alpine_build  -----------------------------------------------  alpine_build
 
-  #  usage:  alpine_sdk  --alpine-sdk  overlay  [userland]
 
-  echo  ;  echo  'alpine_sdk'
+alpine_pkg_prepare_aports  ()  {    #  ------------  alpine_pkg_prepare_aports
 
-  shift  ;  overlay_parse  "$@"
-
-  [ -d "$over" ]  || die  "vland  error  overlay not found  '$over'"
-  [ -d "$land" ]  || die  "vland  error  userland not found  '$land'"
+  #  usage:  self
 
   local  url='https://gitlab.alpinelinux.org/alpine/aports/-/archive/master'
   local  url="$url/aports-master.tar.bz2"
 
-  local  abuild_path="$land/usr/bin/abuild"
-  local  over_home="$over/${HOME#/}"
   local  tbz="${url##*/}"
   local  tbz_path="$over_home/$tbz"
-  local  ports="$over_home/aports-master"
+  local  aports="$over_home/aports"
 
-  if  [ -e "$abuild_path" ]
-    then  echo  "alpine_sdk  found  '$abuild_path'"
-    else  trace  lxr  -nw  --  apk  update
-          trace  lxr  -nw  --  apk  add  alpine-sdk  ;  fi
-
-  #  remove abuild privilege escalation
-  ln  -sf  '/usr/sbin/addgroup'  "$land/usr/bin/abuild-addgroup"
-  ln  -sf  '/usr/sbin/adduser'   "$land/usr/bin/abuild-adduser"
-  ln  -sf  '/sbin/apk'           "$land/usr/bin/abuild-apk"
-
-  [ -e "$tbz_path" ]  &&  echo  "alpine_sdk  found  '$tbz_path'"
+  [ -e "$tbz_path" ]  &&  echo  "alpine_build  found  '$tbz_path'"
   lib_download  "$url"  "$tbz_path"
 
-  if  [ -e "$ports" ]
-    then  echo  "alpine_sdk  found  '$ports'"
-    else  trace  tar  xjf "$tbz_path"  -C "$over_home"  ;  fi
+  if  [ -e "$over_home"/aports ]
+    then  echo  "alpine_build  found  '$over_home/aports'"
+    else  trace  tar  xjf "$tbz_path"  -C "$over_home"
+          trace  mv  "$over_home"/aports-master  "$over_home"/aports  ;  fi  }
 
-  #  todo:  generate & install package signing key
 
-  echo  'alpine_sdk  done'
+alpine_pkg_prepare_keygen  ()  {    #  ------------  alpine_pkg_prepare_keygen
+  #  usage:  self
+  local  conf="$over/$HOME"/.abuild/abuild.conf
+  [ -e "$conf" ]  &&  {  echo  "alpine_build  found  '$conf'"  ;  return  ;  }
+  vland  "$over_name"  "$land_name"  --  abuild-keygen  --append  -n
+  trace  cp  "$over/$HOME"/.abuild/*.rsa.pub  "$land"/etc/apk/keys/  ;  }
 
-  return  ;  }
+
+alpine_pkg_prepare_sdk  ()  {    #  ------------------  alpine_pkg_prepare_sdk
+  #  usage:  self
+  local  abuild_path="$land/usr/bin/abuild"
+  if  [ -e "$abuild_path" ]
+    then  echo  "alpine_build  found  '$abuild_path'"
+    else  trace  lxr  -nr  --  apk  update
+          trace  lxr  -nr  --  apk  add  alpine-sdk  ;  fi
+  #  redirect symlinks to remove abuild privilege escalation
+  ln  -sf  '/usr/sbin/addgroup'  "$land/usr/bin/abuild-addgroup"
+  ln  -sf  '/usr/sbin/adduser'   "$land/usr/bin/abuild-adduser"
+  ln  -sf  '/sbin/apk'           "$land/usr/bin/abuild-apk"  ;  }
+
+
+alpine_pkg_update  ()  {    #  ----------------------------  alpine_pkg_update
+  lxr  -nr  --  apk  update  ;  }
+
+
+alpine_pkg_install  ()  {    #  --------------------------  alpine_pkg_install
+  #  usage:  alpine_pkg_install  package_name
+  lxr  -nr  --  apk  add  "$1"  ;  }
+
+
+alpine_pkg_build_prepare  ()  {    #  --------------  alpine_pkg_build_prepare
+  alpine_pkg_prepare_sdk
+  alpine_pkg_prepare_keygen
+  alpine_pkg_prepare_aports  ;  }
+
+
+alpine_pkg_port_find  ()  {    #  ----------------------  alpine_pkg_port_find
+  #  usage:  alpine_pkg_port_find  package_name
+  local  pwd="$PWD"
+  cd  "$over_home"
+  ls  -d  aports/*/"$1"  2>/dev/null
+  cd  "$pwd"  ;  }
+
+
+alpine_pkg_deps  ()  {    #  --------------------------------  alpine_pkg_deps
+  #  usage:  alpine_pkg_deps  package_name
+  local  port="$(  alpine_pkg_port_find  "$1"  )"
+  [ -z "$port" ]  &&  die  "vland --pkg  package not found  '$1'"
+  trace  lxr  -nw  cd "$port"  --  abuild  deps  ;  }
+
+
+alpine_pkg_build  ()  {    #  ------------------------------  alpine_pkg_build
+  #  usage:  alpine_pkg_build  package_name
+  local  port="$(  alpine_pkg_port_find  "$1"  )"
+  [ -z "$port" ]  &&  die  "vland --pkg  package not found  '$1'"
+  trace  lxr  -nw  cd "$port"  --  abuild  fetch
+  trace  lxr  wd /var/cache/distfiles  cd "$port"  --  abuild  ;  }
+
+
+alpine_pkg_find  ()  {    #  --------------------------------  alpine_pkg_find
+  #  usage:  alpine_pkg_port_find  package_name
+  local  pwd="$PWD"
+  cd  "$over_home"
+  find  packages  -name  "$1"'-*.apk'
+  cd  "$pwd"  ;  }
+
+
+alpine_pkg_build_install  ()  {    #  --------------  alpine_pkg_build_install
+  #  usage:  alpine_pkg_build  package_name
+  local  pkgs="$(  alpine_pkg_find  "$1"  )"
+  trace  lxr  -r  cd "$HOME"  --  apk  --force-non-repository  add  $pkgs  ;  }
 
 
 #  arch  ---------------------------------------------------------------  arch
@@ -620,19 +818,15 @@ alpine_sdk  ()  {    #  ------------------------------------------  alpine_sdk
 
 arch_vars_set  ()  {    #  ------------------------------------  arch_vars_set
 
+  tgz_ver='2022.01.01'
+  tgz_md5='b26943a2201ed75f53faf574c811ec94'
+  tgz_sha1='e7befc6a9d8884f3380214ccee96bf13200db24e'
+  tgz_b2='f008b627caeb7f030a84ee79ae80fb2c82fe328beed8273e3ec7a48d4cb861ed'
+
+  tgz="archlinux-bootstrap-${tgz_ver}-x86_64.tar.gz"
+  dist_path="$vland_dir/dist/arch/$tgz"
   mirror='https://mirror.sfo12.us.leaseweb.net'
   mirror="Server = ${mirror}/archlinux/\$repo/os/\$arch"
-
-  tgz_ver='2021.12.01'
-  tgz_md5='bf22de5c01c7ddf2349646d32dd74b5b'
-  tgz_sha1='5cf00edc931f92b1cac8117ef51ac0325369bd96'
-  tgz_b2='f339b9f129f306e92375240ab81f97f681a273bf7d37482b32eb4f6e86e52c90'
-
-  tgz_url="http://mirror.rackspace.com/archlinux/iso/${tgz_ver}"
-  tgz_url="${tgz_url}/archlinux-bootstrap-${tgz_ver}-x86_64.tar.gz"
-  tgz="${tgz_url##*/}"
-
-  dist_path="$vland_dir/dist/arch/$tgz"
 
   return  ;  }
 
@@ -641,7 +835,7 @@ arch_download  ()  {    #  ------------------------------------  arch_download
   #  usage:  arch_download
   arch_vars_set
   echo  ;  echo  "arch_download  $dist_path"
-  lib_download_multi  "$tgz"  "$arch_web_seeds"  "$dist_path"
+  lib_download_multi  "$arch_web_seeds"  "$tgz_ver/$tgz"  "$dist_path"
   echo  "arch_download  done"  ;  }
 
 
@@ -705,6 +899,220 @@ arch_create  ()  {    #  ----------------------------------------  arch_create
   arch_extract
   arch_configure
   echo  ;  echo  'arch_create  done'  ;  }
+
+
+#  arch_pkg  -------------------------------------------------------  arch_pkg
+
+
+arch_pkg_find  ()  {    #  ------------------------------------  arch_pkg_find
+  #  usage:  arch_pkg_find  package_name
+  local  cwd="$PWD"
+  cd  "$over_home"/vland-build/"$1"/trunk
+  ls  *.pkg.tar.zst
+  cd  "$cwd"  ;  }
+
+
+arch_pkg_makepkg_conf  ()  {    #  --------------------  arch_pkg_makepkg_conf
+  local  conf="$over_home"/.makepkg.conf
+  [ -e "$conf" ]  ||  echo  'PACMAN_AUTH=(  unshare  -r  )'  >  "$conf"  ;  }
+
+
+arch_pkg_pacman_S  ()  {    #  ----------------------------  arch_pkg_pacman_S
+  local  asp="$land"/usr/bin/asp
+  # -e "$asp" ]  &&  echo  "arch_build  found  '$asp'"
+  [ -e "$asp" ]  &&  return
+  trace  lxr  -nr  --  pacman  -Sy  --noconfirm  base-devel  asp  ;  }
+
+
+arch_pkg_update  ()  {    #  --------------------------------  arch_pkg_update
+  trace  lxr  -nr  --  pacman  -Sy  ;  }
+
+
+arch_pkg_install  ()  {    #  ------------------------------  arch_pkg_install
+  trace  lxr  -nr  --  pacman  -Sy  --noconfirm  "$1"  ;  }
+
+
+arch_pkg_build_prepare  ()  {    #  ------------------  arch_pkg_build_prepare
+  arch_pkg_makepkg_conf
+  arch_pkg_pacman_S  ;  }
+
+
+arch_pkg_deps  ()  {    #  ------------------------------------  arch_pkg_deps
+  #  usage:  arch_pkg_deps  package_name
+  trace  lxr  --  mkdir  -p  vland-build
+  [ -e "$over_home"/vland-build/"$1" ]  ||
+    trace  lxr  -n   cd vland-build  --  asp  checkout  "$1"
+  trace  lxr  -nw  cd vland-build/"$1"/trunk  \
+    --  makepkg  --noconfirm  --syncdeps  --noextract  --nobuild  ;  }
+
+
+arch_pkg_build  ()  {    #  ----------------------------------  arch_pkg_build
+  #  usage:  arch_pkg_build_one  package_name
+  [ "$(  arch_pkg_find  "$1"  )" ]  &&  {
+    echo  ;  echo  "vland  found package(s) for '$1'"
+    echo  ;  trace  ls  -lh  "$over_home"/vland-build/"$1"/trunk/
+    echo  ;  return  ;  }
+  trace  lxr  -n  cd vland-build/"$1"/trunk  --  makepkg  --skippgpcheck  ;  }
+
+
+arch_pkg_build_install  ()  {    #  ------------------  arch_pkg_build_install
+  #  usage:  arch_pkg_build_install  package_name
+  local  pkgs="$(  arch_pkg_find  "$1"  )"
+  [ -z  "$pkgs" ]  &&  {
+    echo  'arch_build_install_package  strange, no packages found'
+    return  ;  }
+  trace  lxr  -r  cd "$HOME"/vland-build/"$1"/trunk  \
+    --  pacman  -U  --noconfirm  $pkgs  ;  }
+
+
+#  arch_aur_pkg  -----------------------------------------------  arch_aur_pkg
+
+
+arch_aur_find  ()  {    #  ------------------------------------  arch_aur_find
+  #  usage:  arch_aur_find  package_name
+  #  20220107  perhaps use 'find' instead of 'ls' ?
+  local  cwd="$PWD"  dir="$over_home"/vland-build/"$1"
+  [ -d "$dir" ]  ||  return
+  cd  "$dir"  ;  ls  *.pkg.tar.zst  ;  cd  "$cwd"  ;  }
+
+
+arch_aur_pkg_build_prepare  ()  {    #  ----------  arch_aur_pkg_build_prepare
+  arch_pkg_build_prepare  ;  }
+
+
+arch_aur_pkg_deps  ()  {    #  ----------------------------  arch_aur_pkg_deps
+
+  #  usage:  arch_aur_pkg_deps  package_name
+
+  local  url='https://aur.archlinux.org/cgit/aur.git/snapshot'
+  local  url="${url}/${1}.tar.gz"
+  local  dir="$over_home"/vland-build
+  local  dst="$dir/${url##*/}"
+
+  [ -e "$dst" ]  ||
+    trace  curl  --location  --create-dirs  --output "$dst"  "$url"
+
+  [ -d "$dir/$1" ]  ||  trace  tar  xzf "$dst"  -C "$dir"
+
+  trace  lxr  -nw  cd vland-build/"$1"  \
+    --  makepkg  --noconfirm  --syncdeps  --noextract  --nobuild  ;  }
+
+
+arch_aur_pkg_build  ()  {    #  --------------------------  arch_aur_pkg_build
+  #  usage:  arch_aur_pkg_build  package_name
+  [ "$(  arch_aur_find  "$1"  )" ]  &&  {
+    echo  "arch_aur_build_one  package(s) found for '$1'"  ;  return  ;  }
+  trace  lxr  -n  cd vland-build/"$1"  --  makepkg  --skippgpcheck  ;  }
+
+
+arch_aur_pkg_build_install  ()  {    #  ----------  arch_aur_pkg_build_install
+  #  usage:  arch_aur_pkg_build_install  package_name
+  local  pkgs="$(  arch_aur_find  "$1"  )"
+  [ -z  "$pkgs" ]  &&  {
+    echo  'arch_aur_build_install_one  strange, no packages found'
+    return  ;  }
+  trace  lxr  -r  cd "$HOME"/vland-build/"$1"  \
+    --  pacman  -U  --noconfirm  $pkgs  ;  }
+
+
+#  ubuntu_2110  -------------------------------------------------  ubuntu_2110
+
+
+ubuntu_2110_vars_set  ()  {    #  ----------------------  ubuntu_2110_vars_set
+
+  #  usage:  ubuntu_2110_vars_set
+
+  tor_url='https://releases.ubuntu.com/'
+  tor_url="$tor_url/21.10/ubuntu-21.10-desktop-amd64.iso.torrent"
+  tor_info='Info Hash: f1fcdc1462d36530f526c1d9402eec9100b7ba18'
+  tor_length='Total Length: 2.9GiB (3,116,482,560)'
+
+  iso='ubuntu-21.10-desktop-amd64.iso'
+  iso_sha='f8d3ab0faeaecb5d26628ae1aa21c9a13e0a242c381aa08157db8624d574b830'
+  iso_b2='ed8b2eb4e061ed41f1699d5831468aba8e3029f1c59b8c9d502b24b08352797e'
+
+  tor_path="$vland_dir"/dist/ubuntu/"${tor_url##*/}"
+  iso_path="$vland_dir"/dist/ubuntu/"$iso"
+
+  return  ;  }
+
+
+ubuntu_2110_download  ()  {    #  ----------------------  ubuntu_2110_download
+  #  usage:  ubuntu_2110_download
+  ubuntu_2110_vars_set
+  [ -e "$iso_path" ]  &&  return
+  lib_download  "$tor_url"   "$tor_path"
+
+  local  show="$(    aria2c  -S  "$tor_path"  )"
+  local  info="$(    echo  "$show"  |  egrep  '^Info Hash: '     )"
+  local  length="$(  echo  "$show"  |  egrep  '^Total Length: '  )"
+  local  name="$(    echo  "$show"  |  egrep  '^Name: '          )"
+
+  echo
+  echo  "info    '$info'"
+  echo  "length  '$length'"
+  echo  "name    '$name'"
+
+  [ "$info"   = "$tor_info"   ]  ||  die  "ubuntu_2110   bad info"
+  [ "$length" = "$tor_length" ]  ||  die  "ubuntu_2110   bad length"
+  [ "${name#Name: }" = "$iso" ]  ||  die  "ubuntu_2110   bad name"
+
+  local  dir="$vland_dir"/dist/ubuntu
+  trace  aria2c  -d "$dir"   "$tor_path"
+
+  return  ;  }
+
+
+ubuntu_2110_verify  ()  {    #  --------------------------  ubuntu_2110_verify
+  #  usage:  ubuntu_2110_verify
+  echo  ;  echo  'void_verify'
+  void_vars_set
+  #  20220106
+  #  lib_verify  -v  "$iso_path"  "$iso_sha"    sha256sum
+  #  lib_verify  -v  "$iso_path"  "$iso_b2"     b2sum  -l 256
+  return  ;  }
+
+
+ubuntu_2110_extract  ()  {    #  ------------------------  ubuntu_2110_extract
+
+  #  usage:  ubuntu_2110_extract
+
+  [ -e "$land" ]  &&
+    die  "vland  error  userland already exists  '$land'"
+
+  ubuntu_2110_download
+  ubuntu_2110_verify
+
+  local  dir="$vland_dir"/dist/tmp
+  local  sfs='casper/filesystem.squashfs'
+
+  [ -e "$dir/$sfs" ]  ||  {
+    trace_mkdir_p  "$dir"
+    trace  7z  x  -o"$dir"  "$iso_path"  "$sfs"  ;  }
+
+  [ -e "$land" ]  ||  {
+    trace  unsquashfs  -no-xattrs  -dest "$land"  "$dir/$sfs"  ||
+      true  ;  }
+
+  echo
+  trace  rm     "$dir/$sfs"
+  trace  rmdir  "$dir/casper"
+  trace  rmdir  "$dir"
+
+  return  ;  }
+
+
+ubuntu_2110_configure  ()  {    #  --------------------  ubuntu_2110_configure
+  #  usage:  ubuntu_2110_configure
+  trace  resolv_conf_sync  "$land"/etc/resolv.conf  ;  }
+
+
+ubuntu_2110_create  ()  {    #  --------------------------  ubuntu_2110_create
+  #  usage:  ubuntu_2110_create
+  ubuntu_2110_vars_set
+  ubuntu_2110_extract
+  ubuntu_2110_configure
+  echo  ;  echo  'vland  ubuntu_2110_create  done'  ;  }
 
 
 #  void  ---------------------------------------------------------------  void
@@ -818,344 +1226,341 @@ self_test_clean  ()  {    #  --------------------------------  self_test_clean
   #  usage:  self_test_clean
   echo  ;  echo  'self_test_clean'
   [ -d "$vland_dir" ]  ||  return
-  [ -d              "$vland_dir"/land/vland-self-test ]  &&
-    trace  rm  -rf  "$vland_dir"/land/vland-self-test
-  [ -d              "$vland_dir"/over/vland-self-test ]  &&
-    trace  rm  -rf  "$vland_dir"/over/vland-self-test
+  [ -d              "$vland_dir"/land/self-test-alpine ]  &&
+    trace  rm  -rf  "$vland_dir"/land/self-test-alpine
+  [ -d              "$vland_dir"/over/self-test-alpine ]  &&
+    trace  rm  -rf  "$vland_dir"/over/self-test-alpine
+  [ -d              "$vland_dir"/land/self-test-arch ]  &&
+    trace  rm  -rf  "$vland_dir"/land/self-test-arch
+  [ -d              "$vland_dir"/over/self-test-arch ]  &&
+    trace  rm  -rf  "$vland_dir"/over/self-test-arch
   return  0  ;  }
 
 
-self_test_download  ()  {    #  --------------------------  self_test_download
-  #  usage:  self_test_download
-  echo  ;  echo  'self_test_download'
-  lxroot_install
-  alpine_vars_set  ;  alpine_download  ;  alpine_verify
-  arch_vars_set    ;  arch_download    ;  arch_verify  ;  }
-
-
-self_test_vland_create  ()  {    #  ------------------  self_test_vland_create
-  #  usage:  self_test_vland_create
-  echo  ;  echo  'self_test_vland_create'
-  local  vland="$_"
-  trace  /bin/sh  "$vland"  --create  alpine  vland-self-test
+self_test_arch_aur  ()  {    #  --------------------------  self_test_arch_aur
+  #  usage:  self_test_arch_aur
+  #race  vland  --arch-aur-deps           self-test-arch  --  jed-snapshot
+  trace  vland  --arch-aur-build          self-test-arch  --  jed-snapshot
+  trace  vland  --arch-aur-build-install  self-test-arch  --  jed-snapshot
+  trace  vland  self-test-arch  --  which  jed
+  trace  vland  self-test-arch  --  jed  --version
   return  ;  }
 
 
-self_test_vland_install  ()  {    #  ----------------  self_test_vland_install
-  #  usage:  self_test_vland_install
-  echo  ;  echo  'self_test_vland_install'
-  local  vland="$_"
-  local  dest="$HOME"/vland/land/vland-self-test/usr/local/bin/vland
-  trace  cp     "$vland"  "$dest"
-  trace  chmod  +x  "$dest"
-  return  ;  }
+self_test_distro  ()  {    #  ------------------------------  self_test_distro
 
+  #  usage:  self_test_distro  distro
 
-self_test_arch_copy  ()  {    #  ------------------------  self_test_arch_copy
-  #  usage  self_test_files_copy
-  echo  ;  echo  'self_test_files_copy'
-  local  outer_path="$HOME"/vland/over/vland-self-test
-  local  inner_path="$HOME"/vland/dist/arch/
-  arch_vars_set
-  trace  mkdir  -p            "${outer_path}/${inner_path}"
-  trace  cp     "$dist_path"  "${outer_path}/${inner_path}/"
-  return  ;  }
+  trace  vland  --"$1"-pkg-install        self-test-"$1"  --  zsh
+  trace  vland  --"$1"-pkg-deps           self-test-"$1"  --  lua
+  trace  vland  --"$1"-pkg-build          self-test-"$1"  --  lua
+  trace  vland  --"$1"-pkg-build-install  self-test-"$1"  --  lua
 
+  echo
+  trace  vland  self-test-"$1"  --  which  zsh
+  trace  vland  self-test-"$1"  --  zsh  --version
 
-self_test_vland_create_arch  ()  {    #  --------  self_test_vland_create_arch
-  echo  ;  echo  'self_test_vland_create_arch'
-  local  vland="$_"
-  #  Alpine busybox tar lacks '--delay-directory-restore' (needed for Arch)
-  #  Alpine busybox lacks xz
-  trace  /bin/sh  "$vland"  vland-self-test  -nr  --  apk  update
-  trace  /bin/sh  "$vland"  vland-self-test  -nr  --  apk  add  tar  xz
-  trace  /bin/sh  "$vland"  vland-self-test  -n   --  vland  --create  arch
-  echo
-  echo
-  echo  '----------------------------------------------------------------'
-  echo  '  vland  --self-test  now launching interactive root shell ...  '
-  echo  '----------------------------------------------------------------'
-  echo
-  echo
-  trace  /bin/sh  "$vland"  vland-self-test  -n   --  vland  arch  -nr
+  trace  vland  self-test-"$1"  --  which  lua
+  trace  vland  self-test-"$1"  --  lua  -v
+
   return  ;  }
 
 
 self_test  ()  {    #  --------------------------------------------  self_test
-  #  usage:  self_test
-  echo  ;  echo  'vland  self_test  ...'
-  self_test_clean
-  self_test_download
-  self_test_vland_create
-  self_test_vland_install
-  self_test_arch_copy
-  self_test_vland_create_arch
-  echo  ;  echo  'vland  self_test  done'
+
+  #  trace  vland  --download  alpine
+  #  trace  vland  --download  arch
+  #  trace  vland  --download  void
+  #  trace  vland  --download  void-musl
+
+  #  trace  self_test_distro  alpine
+
+  trace  self_test_distro  arch
+  ###  trace  self_test_arch_aur
+
+  #  trace  self_test_distro  void
+  #  trace  self_test_distro  void-musl
+
   return  ;  }
+
+
+self_test_full_distro  ()  {    #  --------------------  self_test_full_distro
+  #  clean
+  #  create
+  #  install vland
+  #  run vland --self-test
+  return  ;  }
+
+
+self_test_full  ()  {    #  ----------------------------------  self_test_full
+  self_test_full_distro  alpine
+  self_test_full_distro  arch
+  self_test_full_distro  void
+  self_test_full_distro  void-musl  ;  }
 
 
 #  arch_web_seeds  -------------------------------------------  arch_web_seeds
 
 
 arch_web_seeds='
-  https://mirror.aarnet.edu.au/pub/archlinux/iso/2021.12.01/
-  https://mirrors.rit.edu/archlinux/iso/2021.12.01/
-  https://ftp.heanet.ie/mirrors/ftp.archlinux.org/iso/2021.12.01/
-  https://mirror.puzzle.ch/archlinux/iso/2021.12.01/
-  https://mirror.csclub.uwaterloo.ca/archlinux/iso/2021.12.01/
-  https://mirror.umd.edu/archlinux/iso/2021.12.01/
-  https://mirror.archlinux.no/iso/2021.12.01/
-  https://mirror.isoc.org.il/pub/archlinux/iso/2021.12.01/
-  https://mirror.yandex.ru/archlinux/iso/2021.12.01/
-  https://ftp.spline.inf.fu-berlin.de/mirrors/archlinux/iso/2021.12.01/
-  https://mirror.selfnet.de/archlinux/iso/2021.12.01/
-  https://mirrors.lug.mtu.edu/archlinux/iso/2021.12.01/
-  https://archlinux.nautile.nc/archlinux/iso/2021.12.01/
-  https://mirrors.kernel.org/archlinux/iso/2021.12.01/
-  https://ftp.rnl.tecnico.ulisboa.pt/pub/archlinux/iso/2021.12.01/
-  https://mirrors.dotsrc.org/archlinux/iso/2021.12.01/
-  https://ftp.jaist.ac.jp/pub/Linux/ArchLinux/iso/2021.12.01/
-  https://ftp.halifax.rwth-aachen.de/archlinux/iso/2021.12.01/
-  https://shadow.ind.ntou.edu.tw/archlinux/iso/2021.12.01/
-  https://mirrors.rutgers.edu/archlinux/iso/2021.12.01/
-  https://mirrors.nix.org.ua/linux/archlinux/iso/2021.12.01/
-  https://mirrors.ustc.edu.cn/archlinux/iso/2021.12.01/
-  https://ftp.lysator.liu.se/pub/archlinux/iso/2021.12.01/
-  https://mirror.ams1.nl.leaseweb.net/archlinux/iso/2021.12.01/
-  https://mirror.dal10.us.leaseweb.net/archlinux/iso/2021.12.01/
-  https://mirror.fra10.de.leaseweb.net/archlinux/iso/2021.12.01/
-  https://mirror.mia11.us.leaseweb.net/archlinux/iso/2021.12.01/
-  https://mirror.sfo12.us.leaseweb.net/archlinux/iso/2021.12.01/
-  https://mirror.wdc1.us.leaseweb.net/archlinux/iso/2021.12.01/
-  https://mirrors.n-ix.net/archlinux/iso/2021.12.01/
-  https://mirror.dkm.cz/archlinux/iso/2021.12.01/
-  https://mirror.lnx.sk/pub/linux/archlinux/iso/2021.12.01/
-  https://mirror.ps.kz/archlinux/iso/2021.12.01/
-  https://mirror.bytemark.co.uk/archlinux/iso/2021.12.01/
-  https://mirror.rol.ru/archlinux/iso/2021.12.01/
-  https://mirror.i3d.net/pub/archlinux/iso/2021.12.01/
-  https://mirrors.tuna.tsinghua.edu.cn/archlinux/iso/2021.12.01/
-  https://mirrors.neusoft.edu.cn/archlinux/iso/2021.12.01/
-  https://www.mirrorservice.org/sites/ftp.archlinux.org/iso/2021.12.01/
-  https://mirror.netcologne.de/archlinux/iso/2021.12.01/
-  https://archlinux.vi-di.fr/iso/2021.12.01/
-  https://mirror.system.is/arch/iso/2021.12.01/
-  https://dfw.mirror.rackspace.com/archlinux/iso/2021.12.01/
-  https://hkg.mirror.rackspace.com/archlinux/iso/2021.12.01/
-  https://iad.mirror.rackspace.com/archlinux/iso/2021.12.01/
-  https://lon.mirror.rackspace.com/archlinux/iso/2021.12.01/
-  https://mirror.rackspace.com/archlinux/iso/2021.12.01/
-  https://ord.mirror.rackspace.com/archlinux/iso/2021.12.01/
-  https://syd.mirror.rackspace.com/archlinux/iso/2021.12.01/
-  https://arch.mirror.constant.com/iso/2021.12.01/
-  https://mirror.premi.st/archlinux/iso/2021.12.01/
-  https://download.nus.edu.sg/mirror/archlinux/iso/2021.12.01/
-  https://arch.nimukaito.net/iso/2021.12.01/
-  https://mirror.neuf.no/archlinux/iso/2021.12.01/
-  https://mirror.gnomus.de/iso/2021.12.01/
-  https://ftp.fau.de/archlinux/iso/2021.12.01/
-  https://gluttony.sin.cvut.cz/arch/iso/2021.12.01/
-  https://mirror.one.com/archlinux/iso/2021.12.01/
-  https://mirror.t-home.mk/archlinux/iso/2021.12.01/
-  https://ftp.yzu.edu.tw/Linux/archlinux/iso/2021.12.01/
-  https://mirror.metalgamer.eu/archlinux/iso/2021.12.01/
-  https://mirrors.niyawe.de/archlinux/iso/2021.12.01/
-  https://mirrors.atviras.lt/archlinux/iso/2021.12.01/
-  https://arch.yourlabs.org/iso/2021.12.01/
-  https://arch.midov.pl/arch/iso/2021.12.01/
-  https://arch.mirror.zachlge.org/iso/2021.12.01/
-  https://archlinux.koyanet.lv/archlinux/iso/2021.12.01/
-  https://ftp.myrveln.se/pub/linux/archlinux/iso/2021.12.01/
-  https://mirror.telepoint.bg/archlinux/iso/2021.12.01/
-  https://archlinux.mailtunnel.eu/iso/2021.12.01/
-  https://mirrors.cqu.edu.cn/archlinux/iso/2021.12.01/
-  https://archlinux.mirror.digitalpacific.com.au/iso/2021.12.01/
-  https://mirror.f4st.host/archlinux/iso/2021.12.01/
-  https://mirrors.ocf.berkeley.edu/archlinux/iso/2021.12.01/
-  https://ftp.acc.umu.se/mirror/archlinux/iso/2021.12.01/
-  https://mirror.hackingand.coffee/arch/iso/2021.12.01/
-  https://mirrors.uni-plovdiv.net/archlinux/iso/2021.12.01/
-  https://mirror.pseudoform.org/iso/2021.12.01/
-  https://mirror.lty.me/archlinux/iso/2021.12.01/
-  https://arch.jensgutermuth.de/iso/2021.12.01/
-  https://pkg.adfinis.com/archlinux/iso/2021.12.01/
-  https://ftp.sh.cvut.cz/arch/iso/2021.12.01/
-  https://arch-mirror.wtako.net/iso/2021.12.01/
-  https://muug.ca/mirror/archlinux/iso/2021.12.01/
-  https://mirror.0x.sg/archlinux/iso/2021.12.01/
-  https://mirror.wormhole.eu/archlinux/iso/2021.12.01/
-  https://mirror.kaminski.io/archlinux/iso/2021.12.01/
-  https://mirror.ubrco.de/archlinux/iso/2021.12.01/
-  https://archlinux.ip-connect.vn.ua/iso/2021.12.01/
-  https://mirror.sergal.org/archlinux/iso/2021.12.01/
-  https://mirrors.xjtu.edu.cn/archlinux/iso/2021.12.01/
-  https://arlm.tyzoid.com/iso/2021.12.01/
-  https://archlinux.thaller.ws/iso/2021.12.01/
-  https://archimonde.ts.si/archlinux/iso/2021.12.01/
-  https://www.ratenzahlung.de/mirror/archlinux/iso/2021.12.01/
-  https://mirror.smith.geek.nz/archlinux/iso/2021.12.01/
-  https://archlinux.mirror.wearetriple.com/iso/2021.12.01/
-  https://mirror.kku.ac.th/archlinux/iso/2021.12.01/
-  https://mirror.osbeck.com/archlinux/iso/2021.12.01/
-  https://glua.ua.pt/pub/archlinux/iso/2021.12.01/
-  https://ftp.lanet.kr/pub/archlinux/iso/2021.12.01/
-  https://mirrors.celianvdb.fr/archlinux/iso/2021.12.01/
-  https://arch.mirror.square-r00t.net/iso/2021.12.01/
-  https://mirror.pkgbuild.com/iso/2021.12.01/
-  https://mirror.xtom.com.hk/archlinux/iso/2021.12.01/
-  https://mirror.truenetwork.ru/archlinux/iso/2021.12.01/
-  https://mirrors.nxthost.com/archlinux/iso/2021.12.01/
-  https://mirror-hk.koddos.net/archlinux/iso/2021.12.01/
-  https://mirror.koddos.net/archlinux/iso/2021.12.01/
-  https://ftp.wrz.de/pub/archlinux/iso/2021.12.01/
-  https://mirror.thekinrar.fr/archlinux/iso/2021.12.01/
-  https://mirror.neostrada.nl/archlinux/iso/2021.12.01/
-  https://mirrors.ukfast.co.uk/sites/archlinux.org/iso/2021.12.01/
-  https://archlinux.mivzakim.net/iso/2021.12.01/
-  https://mirror.srv.fail/archlinux/iso/2021.12.01/
-  https://mirror.reisenbauer.ee/archlinux/iso/2021.12.01/
-  https://packages.oth-regensburg.de/archlinux/iso/2021.12.01/
-  https://mirror.orbit-os.com/archlinux/iso/2021.12.01/
-  https://mirror.stephen304.com/archlinux/iso/2021.12.01/
-  https://mirrors.sjtug.sjtu.edu.cn/archlinux/iso/2021.12.01/
-  https://mirrors.cat.net/archlinux/iso/2021.12.01/
-  https://mirror.oldsql.cc/archlinux/iso/2021.12.01/
-  https://arch.mirrors.lavatech.top/iso/2021.12.01/
-  https://mirror.checkdomain.de/archlinux/iso/2021.12.01/
-  https://mirrors.xtom.com/archlinux/iso/2021.12.01/
-  https://dist-mirror.fem.tu-ilmenau.de/archlinux/iso/2021.12.01/
-  https://mirror.fsmg.org.nz/archlinux/iso/2021.12.01/
-  https://archlinux.grena.ge/iso/2021.12.01/
-  https://archlinux.mirror.pcextreme.nl/iso/2021.12.01/
-  https://mirror.cyberbits.eu/archlinux/iso/2021.12.01/
-  https://repo.ialab.dsu.edu/archlinux/iso/2021.12.01/
-  https://arch.unixpeople.org/iso/2021.12.01/
-  https://archlinux.mirror.liquidtelecom.com/iso/2021.12.01/
-  https://nova.quantum-mirror.hu/mirrors/pub/archlinux/iso/2021.12.01/
-  https://quantum-mirror.hu/mirrors/pub/archlinux/iso/2021.12.01/
-  https://super.quantum-mirror.hu/mirrors/pub/archlinux/iso/2021.12.01/
-  https://archlinux.uk.mirror.allworldit.com/archlinux/iso/2021.12.01/
-  https://archlinux.za.mirror.allworldit.com/archlinux/iso/2021.12.01/
-  https://mirror.librelabucm.org/archlinux/iso/2021.12.01/
-  https://mirror-archlinux.webruimtehosting.nl/iso/2021.12.01/
-  https://mirror.netweaver.uk/archlinux/iso/2021.12.01/
-  https://mirror.wtnet.de/arch/iso/2021.12.01/
-  https://mirror.mirohost.net/archlinux/iso/2021.12.01/
-  https://ftp.harukasan.org/archlinux/iso/2021.12.01/
-  https://mirror.ufro.cl/archlinux/iso/2021.12.01/
-  https://mirror.aktkn.sg/archlinux/iso/2021.12.01/
-  https://arch.nixlab.pl/iso/2021.12.01/
-  https://mirrors.xtom.nl/archlinux/iso/2021.12.01/
-  https://mirror.scd31.com/arch/iso/2021.12.01/
-  https://ftp.icm.edu.pl/pub/Linux/dist/archlinux/iso/2021.12.01/
-  https://mirror.mikrogravitation.org/archlinux/iso/2021.12.01/
-  https://mirror.chaoticum.net/arch/iso/2021.12.01/
-  https://iad.mirrors.misaka.one/archlinux/iso/2021.12.01/
-  https://mirror.pit.teraswitch.com/archlinux/iso/2021.12.01/
-  https://archlinux.mirror.liteserver.nl/iso/2021.12.01/
-  https://mirrors.ims.nksc.lt/archlinux/iso/2021.12.01/
-  https://mirrors.eric.ovh/arch/iso/2021.12.01/
-  https://mirror.arizona.edu/archlinux/iso/2021.12.01/
-  https://mirror.cloroformo.org/archlinux/iso/2021.12.01/
-  https://mirror2.evolution-host.com/archlinux/iso/2021.12.01/
-  https://mirror.redrock.team/archlinux/iso/2021.12.01/
-  https://archmirror1.octyl.net/iso/2021.12.01/
-  https://mirror.telkomuniversity.ac.id/archlinux/iso/2021.12.01/
-  https://mirror.serverion.com/archlinux/iso/2021.12.01/
-  https://plug-mirror.rcac.purdue.edu/archlinux/iso/2021.12.01/
-  https://mirror.efect.ro/archlinux/iso/2021.12.01/
-  https://mirrors.mit.edu/archlinux/iso/2021.12.01/
-  https://arch.hu.fo/archlinux/iso/2021.12.01/
-  https://mirrors.chroot.ro/archlinux/iso/2021.12.01/
-  https://mirrors.melbourne.co.uk/archlinux/iso/2021.12.01/
-  https://mirror.tarellia.net/distr/archlinux/iso/2021.12.01/
-  https://mirrors.piconets.webwerks.in/archlinux-mirror/iso/2021.12.01/
-  https://mirrors.urbanwave.co.za/archlinux/iso/2021.12.01/
-  https://mirrors.dgut.edu.cn/archlinux/iso/2021.12.01/
-  https://mirror.sysa.tech/archlinux/iso/2021.12.01/
-  https://mirror.rasanegar.com/archlinux/iso/2021.12.01/
-  https://mirror.wuki.li/archlinux/iso/2021.12.01/
-  https://ftp.sudhip.com/archlinux/iso/2021.12.01/
-  https://mirrors.bfsu.edu.cn/archlinux/iso/2021.12.01/
-  https://mirroir.wptheme.fr/archlinux/iso/2021.12.01/
-  https://mirror.kumi.systems/archlinux/iso/2021.12.01/
-  https://mirrors.slaanesh.org/archlinux/iso/2021.12.01/
-  https://mirrors.nju.edu.cn/archlinux/iso/2021.12.01/
-  https://mirror1.cl.netactuate.com/archlinux/iso/2021.12.01/
-  https://mirrors.gethosted.online/archlinux/iso/2021.12.01/
-  https://phinau.de/arch/iso/2021.12.01/
-  https://mirrors.daan.vodka/archlinux/iso/2021.12.01/
-  https://mirror.satis-faction.de/archlinux/iso/2021.12.01/
-  https://mirror.sfinae.tech/pub/mirrors/archlinux/iso/2021.12.01/
-  https://mirror.gi.co.id/archlinux/iso/2021.12.01/
-  https://mirror.papua.go.id/archlinux/iso/2021.12.01/
-  https://mirror.lyrahosting.com/archlinux/iso/2021.12.01/
-  https://mirror.hodgepodge.dev/archlinux/iso/2021.12.01/
-  https://repo.inara.pk/archlinux/iso/2021.12.01/
-  https://mirror.dogado.de/archlinux/iso/2021.12.01/
-  https://opnmirror.co.za/archlinux/iso/2021.12.01/
-  https://mirror.clientvps.com/archlinux/iso/2021.12.01/
-  https://zxcvfdsa.com/arch/iso/2021.12.01/
-  https://mirror.ihost.md/archlinux/iso/2021.12.01/
-  https://pkg.fef.moe/archlinux/iso/2021.12.01/
-  https://mirror.ette.biz/archlinux/iso/2021.12.01/
-  https://theswissbay.ch/archlinux/iso/2021.12.01/
-  https://archmirror.it/repos/iso/2021.12.01/
-  https://mirror.anigil.com/archlinux/iso/2021.12.01/
-  https://mirrors.hit.edu.cn/archlinux/iso/2021.12.01/
-  https://mirror.hoster.kz/archlinux/iso/2021.12.01/
-  https://arch.lucassymons.net/iso/2021.12.01/
-  https://ftp.agdsn.de/pub/mirrors/archlinux/iso/2021.12.01/
-  https://mirror.ava.dev/archlinux/iso/2021.12.01/
-  https://mirror.guillaumea.fr/archlinux/iso/2021.12.01/
-  https://vpsmurah.jagoanhosting.com/archlinux/iso/2021.12.01/
-  https://mirror.arctic.lol/ArchMirror/iso/2021.12.01/
-  https://mirror.surf/archlinux/iso/2021.12.01/
-  https://mirror.cspacehostings.com/archlinux/iso/2021.12.01/
-  https://arch.mcstrugs.org/iso/2021.12.01/
-  https://repo.greeklug.gr/data/pub/linux/archlinux/iso/2021.12.01/
-  https://europe.mirror.pkgbuild.com/iso/2021.12.01/
-  https://america.mirror.pkgbuild.com/iso/2021.12.01/
-  https://asia.mirror.pkgbuild.com/iso/2021.12.01/
-  https://arch.mirror.jsc.mx/iso/2021.12.01/
-  https://mirror.darklinux.uk/archlinux/iso/2021.12.01/
-  https://free.nchc.org.tw/arch/iso/2021.12.01/
-  https://mirror.juniorjpdj.pl/archlinux/iso/2021.12.01/
-  https://tedwall.se/archlinux/iso/2021.12.01/
-  https://archlinux.qontinuum.space:4443/iso/2021.12.01/
-  https://mirror.nw-sys.ru/archlinux/iso/2021.12.01/
-  https://repo.skni.umcs.pl/archlinux/iso/2021.12.01/
-  https://mirror.cybersecurity.nmt.edu/archlinux/iso/2021.12.01/
-  https://mirror.0xem.ma/arch/iso/2021.12.01/
-  https://mirror.cj2.nl/archlinux/iso/2021.12.01/
-  https://mirror.hostup.org/archlinux/iso/2021.12.01/
-  https://mirrors.xtom.de/archlinux/iso/2021.12.01/
-  https://mirrors.xtom.ee/archlinux/iso/2021.12.01/
-  https://mirror.cyberbits.asia/archlinux/iso/2021.12.01/
-  https://mirror.moson.org/arch/iso/2021.12.01/
-  https://mirror.phx1.us.spryservers.net/archlinux/iso/2021.12.01/
-  https://arch.yhtez.xyz/iso/2021.12.01/
-  https://mirror.2degrees.nz/archlinux/iso/2021.12.01/
-  https://arch.powerfly.ca/iso/2021.12.01/
-  https://ftp.ludd.ltu.se/mirrors/archlinux/iso/2021.12.01/
-  https://mirror.jingk.ai/archlinux/iso/2021.12.01/
-  https://mirrors.wsyu.edu.cn/archlinux/iso/2021.12.01/
-  https://mirrors.radwebhosting.com/archlinux/iso/2021.12.01/
-  https://mirror.theash.xyz/arch/iso/2021.12.01/
-  https://mirror.cov.ukservers.com/archlinux/iso/2021.12.01/
-  https://archlinux.astra.in.ua/iso/2021.12.01/
-  https://ftp.psnc.pl/linux/archlinux/iso/2021.12.01/
-  https://mirror.clarkson.edu/archlinux/iso/2021.12.01/
-  https://mirror.repository.id/archlinux/iso/2021.12.01/
-  https://repo.endpoint.ml/archlinux/iso/2021.12.01/
-  https://mirrors.kamey.tk/archlinux/iso/2021.12.01/
-  https://mirror.iusearchbtw.nl/iso/2021.12.01/
-  https://mirrors.up.pt/pub/archlinux/iso/2021.12.01/
-  https://mirror.bardia.tech/archlinux/iso/2021.12.01/
-  https://de.arch.mirror.kescher.at/iso/2021.12.01/
-  https://tick-tack.mynetgear.com/archlinux/iso/2021.12.01/
-  https://archlinux.homeinfo.de/iso/2021.12.01/
-  https://archlinux.ourhome.kiwi/iso/2021.12.01/'
+  https://mirror.aarnet.edu.au/pub/archlinux/iso/
+  https://mirrors.rit.edu/archlinux/iso/
+  https://ftp.heanet.ie/mirrors/ftp.archlinux.org/iso/
+  https://mirror.puzzle.ch/archlinux/iso/
+  https://mirror.csclub.uwaterloo.ca/archlinux/iso/
+  https://mirror.umd.edu/archlinux/iso/
+  https://mirror.archlinux.no/iso/
+  https://mirror.isoc.org.il/pub/archlinux/iso/
+  https://mirror.yandex.ru/archlinux/iso/
+  https://ftp.spline.inf.fu-berlin.de/mirrors/archlinux/iso/
+  https://mirror.selfnet.de/archlinux/iso/
+  https://mirrors.lug.mtu.edu/archlinux/iso/
+  https://archlinux.nautile.nc/archlinux/iso/
+  https://mirrors.kernel.org/archlinux/iso/
+  https://ftp.rnl.tecnico.ulisboa.pt/pub/archlinux/iso/
+  https://mirrors.dotsrc.org/archlinux/iso/
+  https://ftp.jaist.ac.jp/pub/Linux/ArchLinux/iso/
+  https://ftp.halifax.rwth-aachen.de/archlinux/iso/
+  https://shadow.ind.ntou.edu.tw/archlinux/iso/
+  https://mirrors.rutgers.edu/archlinux/iso/
+  https://mirrors.nix.org.ua/linux/archlinux/iso/
+  https://mirrors.ustc.edu.cn/archlinux/iso/
+  https://ftp.lysator.liu.se/pub/archlinux/iso/
+  https://mirror.ams1.nl.leaseweb.net/archlinux/iso/
+  https://mirror.dal10.us.leaseweb.net/archlinux/iso/
+  https://mirror.fra10.de.leaseweb.net/archlinux/iso/
+  https://mirror.mia11.us.leaseweb.net/archlinux/iso/
+  https://mirror.sfo12.us.leaseweb.net/archlinux/iso/
+  https://mirror.wdc1.us.leaseweb.net/archlinux/iso/
+  https://mirrors.n-ix.net/archlinux/iso/
+  https://mirror.dkm.cz/archlinux/iso/
+  https://mirror.lnx.sk/pub/linux/archlinux/iso/
+  https://mirror.ps.kz/archlinux/iso/
+  https://mirror.bytemark.co.uk/archlinux/iso/
+  https://mirror.rol.ru/archlinux/iso/
+  https://mirror.i3d.net/pub/archlinux/iso/
+  https://mirrors.tuna.tsinghua.edu.cn/archlinux/iso/
+  https://mirrors.neusoft.edu.cn/archlinux/iso/
+  https://www.mirrorservice.org/sites/ftp.archlinux.org/iso/
+  https://mirror.netcologne.de/archlinux/iso/
+  https://archlinux.vi-di.fr/iso/
+  https://mirror.system.is/arch/iso/
+  https://dfw.mirror.rackspace.com/archlinux/iso/
+  https://hkg.mirror.rackspace.com/archlinux/iso/
+  https://iad.mirror.rackspace.com/archlinux/iso/
+  https://lon.mirror.rackspace.com/archlinux/iso/
+  https://mirror.rackspace.com/archlinux/iso/
+  https://ord.mirror.rackspace.com/archlinux/iso/
+  https://syd.mirror.rackspace.com/archlinux/iso/
+  https://arch.mirror.constant.com/iso/
+  https://mirror.premi.st/archlinux/iso/
+  https://download.nus.edu.sg/mirror/archlinux/iso/
+  https://arch.nimukaito.net/iso/
+  https://mirror.neuf.no/archlinux/iso/
+  https://mirror.gnomus.de/iso/
+  https://ftp.fau.de/archlinux/iso/
+  https://gluttony.sin.cvut.cz/arch/iso/
+  https://mirror.one.com/archlinux/iso/
+  https://mirror.t-home.mk/archlinux/iso/
+  https://ftp.yzu.edu.tw/Linux/archlinux/iso/
+  https://mirror.metalgamer.eu/archlinux/iso/
+  https://mirrors.niyawe.de/archlinux/iso/
+  https://mirrors.atviras.lt/archlinux/iso/
+  https://arch.yourlabs.org/iso/
+  https://arch.midov.pl/arch/iso/
+  https://arch.mirror.zachlge.org/iso/
+  https://archlinux.koyanet.lv/archlinux/iso/
+  https://ftp.myrveln.se/pub/linux/archlinux/iso/
+  https://mirror.telepoint.bg/archlinux/iso/
+  https://archlinux.mailtunnel.eu/iso/
+  https://mirrors.cqu.edu.cn/archlinux/iso/
+  https://archlinux.mirror.digitalpacific.com.au/iso/
+  https://mirror.f4st.host/archlinux/iso/
+  https://mirrors.ocf.berkeley.edu/archlinux/iso/
+  https://ftp.acc.umu.se/mirror/archlinux/iso/
+  https://mirror.hackingand.coffee/arch/iso/
+  https://mirrors.uni-plovdiv.net/archlinux/iso/
+  https://mirror.pseudoform.org/iso/
+  https://mirror.lty.me/archlinux/iso/
+  https://arch.jensgutermuth.de/iso/
+  https://pkg.adfinis.com/archlinux/iso/
+  https://ftp.sh.cvut.cz/arch/iso/
+  https://arch-mirror.wtako.net/iso/
+  https://muug.ca/mirror/archlinux/iso/
+  https://mirror.0x.sg/archlinux/iso/
+  https://mirror.wormhole.eu/archlinux/iso/
+  https://mirror.kaminski.io/archlinux/iso/
+  https://mirror.ubrco.de/archlinux/iso/
+  https://archlinux.ip-connect.vn.ua/iso/
+  https://mirror.sergal.org/archlinux/iso/
+  https://mirrors.xjtu.edu.cn/archlinux/iso/
+  https://arlm.tyzoid.com/iso/
+  https://archlinux.thaller.ws/iso/
+  https://archimonde.ts.si/archlinux/iso/
+  https://www.ratenzahlung.de/mirror/archlinux/iso/
+  https://mirror.smith.geek.nz/archlinux/iso/
+  https://archlinux.mirror.wearetriple.com/iso/
+  https://mirror.kku.ac.th/archlinux/iso/
+  https://mirror.osbeck.com/archlinux/iso/
+  https://glua.ua.pt/pub/archlinux/iso/
+  https://ftp.lanet.kr/pub/archlinux/iso/
+  https://mirrors.celianvdb.fr/archlinux/iso/
+  https://arch.mirror.square-r00t.net/iso/
+  https://mirror.pkgbuild.com/iso/
+  https://mirror.xtom.com.hk/archlinux/iso/
+  https://mirror.truenetwork.ru/archlinux/iso/
+  https://mirrors.nxthost.com/archlinux/iso/
+  https://mirror-hk.koddos.net/archlinux/iso/
+  https://mirror.koddos.net/archlinux/iso/
+  https://ftp.wrz.de/pub/archlinux/iso/
+  https://mirror.thekinrar.fr/archlinux/iso/
+  https://mirror.neostrada.nl/archlinux/iso/
+  https://mirrors.ukfast.co.uk/sites/archlinux.org/iso/
+  https://archlinux.mivzakim.net/iso/
+  https://mirror.srv.fail/archlinux/iso/
+  https://mirror.reisenbauer.ee/archlinux/iso/
+  https://packages.oth-regensburg.de/archlinux/iso/
+  https://mirror.orbit-os.com/archlinux/iso/
+  https://mirror.stephen304.com/archlinux/iso/
+  https://mirrors.sjtug.sjtu.edu.cn/archlinux/iso/
+  https://mirrors.cat.net/archlinux/iso/
+  https://mirror.oldsql.cc/archlinux/iso/
+  https://arch.mirrors.lavatech.top/iso/
+  https://mirror.checkdomain.de/archlinux/iso/
+  https://mirrors.xtom.com/archlinux/iso/
+  https://dist-mirror.fem.tu-ilmenau.de/archlinux/iso/
+  https://mirror.fsmg.org.nz/archlinux/iso/
+  https://archlinux.grena.ge/iso/
+  https://archlinux.mirror.pcextreme.nl/iso/
+  https://mirror.cyberbits.eu/archlinux/iso/
+  https://repo.ialab.dsu.edu/archlinux/iso/
+  https://arch.unixpeople.org/iso/
+  https://archlinux.mirror.liquidtelecom.com/iso/
+  https://nova.quantum-mirror.hu/mirrors/pub/archlinux/iso/
+  https://quantum-mirror.hu/mirrors/pub/archlinux/iso/
+  https://super.quantum-mirror.hu/mirrors/pub/archlinux/iso/
+  https://archlinux.uk.mirror.allworldit.com/archlinux/iso/
+  https://archlinux.za.mirror.allworldit.com/archlinux/iso/
+  https://mirror.librelabucm.org/archlinux/iso/
+  https://mirror-archlinux.webruimtehosting.nl/iso/
+  https://mirror.netweaver.uk/archlinux/iso/
+  https://mirror.wtnet.de/arch/iso/
+  https://mirror.mirohost.net/archlinux/iso/
+  https://ftp.harukasan.org/archlinux/iso/
+  https://mirror.ufro.cl/archlinux/iso/
+  https://mirror.aktkn.sg/archlinux/iso/
+  https://arch.nixlab.pl/iso/
+  https://mirrors.xtom.nl/archlinux/iso/
+  https://mirror.scd31.com/arch/iso/
+  https://ftp.icm.edu.pl/pub/Linux/dist/archlinux/iso/
+  https://mirror.mikrogravitation.org/archlinux/iso/
+  https://mirror.chaoticum.net/arch/iso/
+  https://iad.mirrors.misaka.one/archlinux/iso/
+  https://mirror.pit.teraswitch.com/archlinux/iso/
+  https://archlinux.mirror.liteserver.nl/iso/
+  https://mirrors.ims.nksc.lt/archlinux/iso/
+  https://mirrors.eric.ovh/arch/iso/
+  https://mirror.arizona.edu/archlinux/iso/
+  https://mirror.cloroformo.org/archlinux/iso/
+  https://mirror2.evolution-host.com/archlinux/iso/
+  https://mirror.redrock.team/archlinux/iso/
+  https://archmirror1.octyl.net/iso/
+  https://mirror.telkomuniversity.ac.id/archlinux/iso/
+  https://mirror.serverion.com/archlinux/iso/
+  https://plug-mirror.rcac.purdue.edu/archlinux/iso/
+  https://mirror.efect.ro/archlinux/iso/
+  https://mirrors.mit.edu/archlinux/iso/
+  https://arch.hu.fo/archlinux/iso/
+  https://mirrors.chroot.ro/archlinux/iso/
+  https://mirrors.melbourne.co.uk/archlinux/iso/
+  https://mirror.tarellia.net/distr/archlinux/iso/
+  https://mirrors.piconets.webwerks.in/archlinux-mirror/iso/
+  https://mirrors.urbanwave.co.za/archlinux/iso/
+  https://mirrors.dgut.edu.cn/archlinux/iso/
+  https://mirror.sysa.tech/archlinux/iso/
+  https://mirror.rasanegar.com/archlinux/iso/
+  https://mirror.wuki.li/archlinux/iso/
+  https://ftp.sudhip.com/archlinux/iso/
+  https://mirrors.bfsu.edu.cn/archlinux/iso/
+  https://mirroir.wptheme.fr/archlinux/iso/
+  https://mirror.kumi.systems/archlinux/iso/
+  https://mirrors.slaanesh.org/archlinux/iso/
+  https://mirrors.nju.edu.cn/archlinux/iso/
+  https://mirror1.cl.netactuate.com/archlinux/iso/
+  https://mirrors.gethosted.online/archlinux/iso/
+  https://phinau.de/arch/iso/
+  https://mirrors.daan.vodka/archlinux/iso/
+  https://mirror.satis-faction.de/archlinux/iso/
+  https://mirror.sfinae.tech/pub/mirrors/archlinux/iso/
+  https://mirror.gi.co.id/archlinux/iso/
+  https://mirror.papua.go.id/archlinux/iso/
+  https://mirror.lyrahosting.com/archlinux/iso/
+  https://mirror.hodgepodge.dev/archlinux/iso/
+  https://repo.inara.pk/archlinux/iso/
+  https://mirror.dogado.de/archlinux/iso/
+  https://opnmirror.co.za/archlinux/iso/
+  https://mirror.clientvps.com/archlinux/iso/
+  https://zxcvfdsa.com/arch/iso/
+  https://mirror.ihost.md/archlinux/iso/
+  https://pkg.fef.moe/archlinux/iso/
+  https://mirror.ette.biz/archlinux/iso/
+  https://theswissbay.ch/archlinux/iso/
+  https://archmirror.it/repos/iso/
+  https://mirror.anigil.com/archlinux/iso/
+  https://mirrors.hit.edu.cn/archlinux/iso/
+  https://mirror.hoster.kz/archlinux/iso/
+  https://arch.lucassymons.net/iso/
+  https://ftp.agdsn.de/pub/mirrors/archlinux/iso/
+  https://mirror.ava.dev/archlinux/iso/
+  https://mirror.guillaumea.fr/archlinux/iso/
+  https://vpsmurah.jagoanhosting.com/archlinux/iso/
+  https://mirror.arctic.lol/ArchMirror/iso/
+  https://mirror.surf/archlinux/iso/
+  https://mirror.cspacehostings.com/archlinux/iso/
+  https://arch.mcstrugs.org/iso/
+  https://repo.greeklug.gr/data/pub/linux/archlinux/iso/
+  https://europe.mirror.pkgbuild.com/iso/
+  https://america.mirror.pkgbuild.com/iso/
+  https://asia.mirror.pkgbuild.com/iso/
+  https://arch.mirror.jsc.mx/iso/
+  https://mirror.darklinux.uk/archlinux/iso/
+  https://free.nchc.org.tw/arch/iso/
+  https://mirror.juniorjpdj.pl/archlinux/iso/
+  https://tedwall.se/archlinux/iso/
+  https://archlinux.qontinuum.space:4443/iso/
+  https://mirror.nw-sys.ru/archlinux/iso/
+  https://repo.skni.umcs.pl/archlinux/iso/
+  https://mirror.cybersecurity.nmt.edu/archlinux/iso/
+  https://mirror.0xem.ma/arch/iso/
+  https://mirror.cj2.nl/archlinux/iso/
+  https://mirror.hostup.org/archlinux/iso/
+  https://mirrors.xtom.de/archlinux/iso/
+  https://mirrors.xtom.ee/archlinux/iso/
+  https://mirror.cyberbits.asia/archlinux/iso/
+  https://mirror.moson.org/arch/iso/
+  https://mirror.phx1.us.spryservers.net/archlinux/iso/
+  https://arch.yhtez.xyz/iso/
+  https://mirror.2degrees.nz/archlinux/iso/
+  https://arch.powerfly.ca/iso/
+  https://ftp.ludd.ltu.se/mirrors/archlinux/iso/
+  https://mirror.jingk.ai/archlinux/iso/
+  https://mirrors.wsyu.edu.cn/archlinux/iso/
+  https://mirrors.radwebhosting.com/archlinux/iso/
+  https://mirror.theash.xyz/arch/iso/
+  https://mirror.cov.ukservers.com/archlinux/iso/
+  https://archlinux.astra.in.ua/iso/
+  https://ftp.psnc.pl/linux/archlinux/iso/
+  https://mirror.clarkson.edu/archlinux/iso/
+  https://mirror.repository.id/archlinux/iso/
+  https://repo.endpoint.ml/archlinux/iso/
+  https://mirrors.kamey.tk/archlinux/iso/
+  https://mirror.iusearchbtw.nl/iso/
+  https://mirrors.up.pt/pub/archlinux/iso/
+  https://mirror.bardia.tech/archlinux/iso/
+  https://de.arch.mirror.kescher.at/iso/
+  https://tick-tack.mynetgear.com/archlinux/iso/
+  https://archlinux.homeinfo.de/iso/
+  https://archlinux.ourhome.kiwi/iso/'
 
 
 
