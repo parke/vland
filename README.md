@@ -29,7 +29,7 @@ $  /bin/sh  vland  --pkg  arch-guest  build-install  lua
 $  /bin/sh  vland  arch-guest  --  lua  -v
 ```
 
-`vland` is a Dash shell script.  The actual virtual environment is created by `lxroot`.  `lxroot` is a small C++ program. 
+`vland` is a Dash shell script.  The actual virtual environment is created by [`lxroot`](https://github.com/parke/lxroot).  `lxroot` is a small C++ program. 
  Both run without root access.  `vland` is, more or less, an opinionated, high-level convenience wrapper around `lxroot`, with some added bells and whistles.
 
 Learn more by reading the [**`vland` tutorial**](https://github.com/parke/vland/wiki/tutorial) and the [**`lxroot` tutorial**](https://github.com/parke/lxroot/wiki/tutorial).
@@ -62,4 +62,4 @@ Due to `lxroot`'s safety, simplicity, efficiency, and ability to run without roo
 -  [**man page**](https://github.com/parke/vland/wiki/man_page)
 -  [**wiki**](https://github.com/parke/lxroot/wiki)
 
-<!--  version  20220119.0  -->
+<!--  version  20220119.1  -->
