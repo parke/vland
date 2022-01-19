@@ -6,7 +6,7 @@
 #  Distributed under GPLv3 (see end of file) WITHOUT ANY WARRANTY.
 
 
-readonly  VLAND_VERSION='0.22.0'    #  20220111
+readonly  VLAND_VERSION='0.22.1'    #  20220118
 
 
 #  vland.sh expects /bin/sh to be dash (or busybox or bash).
@@ -14,45 +14,69 @@ readonly  VLAND_VERSION='0.22.0'    #  20220111
 
 set  -o errexit
 
+
 readonly  VLAND_EXE="$(  realpath  "$0"  )"
 
 
-help_common  ()  {    #  ----------------------------------------  help_common
+help  ()  {    #  ------------------------------------------------------  help
   echo  \
 "
-usage:  vland  --operation  [option ...]
-        vland  overlay  [guest]  [option ...]  [-- command ...]
-
-mini tutorial:
-$  vland  --create  arch    #  Create an Arch Linux guest named 'arch'.
-$  vland  arch  -nr         #  Enter the 'arch' guest as root."  ;  }
-
-
-help  ()  {    #  ------------------------------------------------------  help
-  help_common
-  echo  ;  echo  'For more help, please run:  vland  --help-more'  ;  }
+usage:  vland  overlay      [option...]  [--  command  [arg...]]
+        vland  --operation  [option...]
+        vland  --help-more"  ;  }
 
 
 help_more  ()  {    #  --------------------------------------------  help_more
-  echo  \
+  help  ;  echo  \
 "
-usage:  vland  --operation  [option ...]
-        vland  overlay  [guest]  [option ...]  [-- command ...]
-
-an example:
+An example:
 $  vland  --create  arch    #  Create an Arch Linux guest named 'arch'.
 $  vland  arch  -nr         #  Enter the 'arch' guest as root.
 
-To create a guest and overlay, run:
-$  vland  --create  distro  [guest]  [overlay]
+vland version ${VLAND_VERSION}
+Copyright (C) 2020-2021 by Parke Bostrom
+Website:  https://github.com/parke/vland
+
+To create a guest and an overlay:
+$  vland  --create  distro  [guest  [overlay]]
 If not specified, guest   defaults to distro.
 If not specified, overlay defaults to guest.
 
-To run a shell (or a command) in a guest, run:
-$  vland  overlay  [guest]  [option ...]  [-- command [arg ...]]
-If guest is not specified, the overlay's default guest will be used.
-Any specified options are simply passed through to lxroot.
+To run a shell (or a command) in an overlay:
+$  vland  overlay  [option...]  [--  command  [arg...]]
+Any specified options (and command) are simply passed through to lxroot.
 If no command is specified, vland will run an interactive shell in the guest.
+You specify only an overlay.  By default, the matching guest will be used.
+
+Explanation of 'guest' and 'overlay':
+You may think of the 'guest' as being the 'root partition'.
+Whereas the 'overlay' is the '/home directory'.
+The above explanation is a slight oversimplification, as ...
+... an overlay typically also includes /root and /tmp.
+This separation will allow running mulitple overlays on the same guest.
+By default, the guest is read-only, whereas the overlay is writable.
+The separation will also allow running the same overlay on multiple guests.
+Some overlay/guest functionality is not yet implemented ...
+... nonetheless, vland *always* uses an overlay together with a guest.
+By default, the overlay and the guest have the same name.
+For many common use cases, it may be simplest ...
+... to think of them as being a bonded pair that are always used together.
+
+To install packages (in a guest):
+$  vland  --pkg  overlay  install  package...
+Where 'overlay' is the name of the overlay/guest you wish to use.
+The packages will typically be installed in the guest, not in the overlay.
+
+To build packages (in an overlay):
+$  vland  --pkg  overlay  build  package...
+The packages will be built in \$HOME, which is typically part of the overlay.
+
+To build and install packages (in an overlay and a guest, respectively):
+$  vland  --pkg  overlay  build-install  package...
+The packages will be built in \$HOME, which is typically part of the overlay.
+The packages will typically be installed in the guest, not in the overlay.
+
+On 'void' guests '--pkg' is only partly implemented at present.
 
 Common lxroot options:
 -n    grant the guest access to the host's network interfaces
@@ -76,15 +100,28 @@ Operations:
 --help
 --help-more
 
---create      distro  [guest]  [overlay]
+--create      distro  [guest  [overlay]]
 --download    distro
 
---pkg         overlay  [guest]  action  [--]  [package ...]
---aur         overlay  [guest]  action  [--]  [package ...]
+--pkg         overlay  action  [package...]
+--aur         overlay  action  [package...]
 
 --self-test
 --self-test-full
---self-test-clean"
+--self-test-clean
+
+Package actions (for use with --pkg and --aur):
+
+update           update/sync the guest's package database
+install          download and install packages
+deps             download and install build dependencies
+build            build packages
+build-install    build and install packages
+build-clean      remove non-essential build time files
+
+Anticipated future operations that are not yet implemented:
+
+--guest  guest  overlay  [option...]  [--  command  [arg...]]"
 
   return  ;  }
 
@@ -92,7 +129,14 @@ Operations:
 main  ()  {    #  ------------------------------------------------------  main
 
   main_cpu_check
-  main_config_load
+  config_init  "$@"
+
+  while  true  ;  do
+    local  main_shift='0'
+    case  "$1"  in
+      ( --guest )  vset  guest  "$2"  ;  main_shift='2'  ;;
+      ( *       )  break             ;;  esac
+    shift  "$(  main_shift  "$@"  )"  ;  done
 
   case  "$1"  in
 
@@ -125,36 +169,88 @@ main  ()  {    #  ------------------------------------------------------  main
   exit  ;  }
 
 
-###  vland global variables  -------------------------  vland global variables
-#
-#  overlay_name    the name of the overlay
-#  guest_name      the name of the guest
-#  distro          the name of the distro
-#
-#  vland_dir       typically:  $HOME/.local/vland  or  /vland/$USER
-#  overlay         typically:  $vland_dir/overlay/$overlay_name
-#  overlay_home    typically:  $overlay/${HOME#/}
-#  guest           typcially:  $vland_dir/guest/$guest_name
-#
-#  tgz_url         typically:  the url of distro rootfs tarball
-#  tgz             typically:  the filename portion of $tgz_url
-#  dist_path       typically:  $vland_dir/dist/$distro/$tgz
+config_unset  ()  {    #  --------------------------------------  config_unset
 
+  unset  vland_dir       #  typically:  $HOME/.local/vland  or  /vland/$USER
+  unset  vland_mnt       #  typically:  /mnt/vland/$USER
 
-main_config_load  ()  {    #  ------------------------------  main_config_load
-  local  path="$HOME/.config/vland/vland.conf"
-  [ -f "$path" ]  &&  .  "$path"
-  readonly  vland_dir="$(  main_config_vland_dir  )"
+  unset  overlay_name    #  the name of the overlay
+  unset  guest_name      #  the name of the guest
+  unset  distro          #  the name of the distro
+
+  unset  overlay         #  typically:  $vland_dir/overlay/$overlay_name
+  unset  guest           #  typcially:  $vland_dir/guest/$guest_name
+
+  unset  overlay_home    #  typically:  ${overlay}${HOME}
+  unset  squash          #  typically:  $vland_dir/squash/$guest_name
+  unset  squash_binds    #  detected squash binds, if any
+
+  unset  tgz_url         #  typically:  the url of distro rootfs tarball
+  unset  tgz             #  typically:  the filename portion of $tgz_url
+  unset  dist_path       #  typically:  $vland_dir/dist/$distro/$tgz
+
+  #  hooks for use in $overlay/vland.conf
+  unset  -v  custom_options     #  optional custom options for lxroot
+  unset  -f  custom_launcher    #  an optional, custom launcher function
+
+  #  internal variables
+  unset  -v  lxr_exec    #  '' or 'exec'
+
+  ###  variables that are imported from the environment
+  #
+  #      VLAND_GUEST      #  with --create:  will specify $guest
+  #      VLAND_OVERLAY    #  with --create:  will specify $overlay
+
   return  ;  }
 
 
-main_config_vland_dir  ()  {    #  --------------------  main_config_vland_dir
-  #  usage:  main_config_vland_dir
+config_vland_dir  ()  {    #  -------------------------  main_config_vland_dir
   local  hlv="$HOME"/.local/vland
-  [    "$vland_dir"   ]  &&  {  echo  "$vland_dir"    ;  return  ;  }
-  [ -d "$hlv/guest"   ]  &&  {  echo  "$hlv"          ;  return  ;  }
-  [ -d "/vland/$USER" ]  &&  {  echo  "/vland/$USER"  ;  return  ;  }
+  is_str  "$vland_dir"    &&  {  echo  "$vland_dir"    ;  return  ;  }
+  is_str  "$VLAND_DIR"    &&  {  echo  "$VLAND_DIR"    ;  return  ;  }
+  is_dir  "$hlv/guest"    &&  {  echo  "$hlv"          ;  return  ;  }
+  is_dir  "/vland/$USER"  &&  {  echo  "/vland/$USER"  ;  return  ;  }
   echo  "$hlv"  ;  }
+
+
+config_defaults  ()  {    #  --------------------------------  config_defaults
+  not_str  "$vland_dir"  &&  readonly  vland_dir="$(  config_vland_dir  )"
+  not_str  "$vland_mnt"  &&  readonly  vland_mnt="/mnt/vland/$USER"  ;  }
+
+
+config_init  ()  {    #  ----------------------------------------  config_init
+  #  usage:  config_init  [arg...]
+  #  note:  all of arg... from main will be accessible when '$path' is sourced
+  config_unset
+  local  path="$HOME/.config/vland/vland.conf"
+  is_file  "$path"  &&  .  "$path"
+  config_defaults  ;  }
+
+
+config_overlay  ()  {    #  ----------------------------------  config_overlay
+
+  #  usage:  config_overlay  overlay_name
+
+  not_str "$vland_dir"  &&  die  "vland  internal error  vland_dir not set"
+
+  case  "$1"  in
+    ( '' | -* )  die  "vland  error  invalid overlay  '$1'"  ;;
+    ( *       )  overlay_name="$1"  ;;
+    esac
+
+  not_str  "$overlay"  &&  overlay="$vland_dir/overlay/$overlay_name"
+
+  overlay_home="${overlay}${HOME}"    #  convenient but potentially incorrect
+
+  not_dir  "$overlay"  &&  die  "vland  overlay not found  '$overlay'"
+  is_file  "$overlay"/vland.conf  &&  .  "$overlay"/vland.conf
+  squash_detect
+  not_str  "$guest_name"  &&  guest_name="$overlay_name"
+  not_str  "$guest"       &&  guest="$vland_dir/guest/$guest_name"
+  distro_detect  ;  }
+
+
+#  main  ---------------------------------------------------------------  main
 
 
 main_cpu_check  ()  {    #  ----------------------------------  main_cpu_check
@@ -185,13 +281,15 @@ main_list  ()  {    #  --------------------------------------------  main_list
 
 main_status  ()  {    #  ----------------------------------------  main_status
 
-  help_common
+  is_str  "$vland_dir"  &&  is_dir  "$vland_dir/overlay"  &&  {
+    echo
+    echo  "vland_dir  '$vland_dir'"
+    echo
+    echo  'overlays'
+    ls  "$vland_dir/overlay"  |  indent  '  '
+    return  ;  }
 
-  echo
-  echo  'available overlays'
-  if  [ -d "$vland_dir/overlay" ]
-    then  ls  "$vland_dir/overlay"
-    else  echo  "(none)"  ;  fi  }
+  help  ;  }
 
 
 main_version  ()  {    #  --------------------------------------  main_version
@@ -202,17 +300,42 @@ main_version  ()  {    #  --------------------------------------  main_version
 
 
 create_init  ()  {    #  ----------------------------------------  create_init
-  #  usage:  create_init  --create  distro  [land]  [overlay]
+
+  #  usage:  create_init  --create  distro  [guest]  [overlay]
+
+  is_str  "$distro"   &&  die  "create_init  unexpected distro  '$distro'"
+  is_str  "$guest"    &&  die  "create_init  unexpected guest  'guest'"
+  is_str  "$overlay"  &&  die  "create_init  unexpected overlay  '$overlay'"
+
   distro="$2"
-  guest_name="${3:-$distro}"
-  overlay_name="${4:-$guest_name}"
-  guest="$vland_dir/guest/$guest_name"
-  overlay="$vland_dir/overlay/$overlay_name"
+
+  not_str  "$guest"         &&  guest="$VLAND_GUEST"
+  not_str  "$overlay"       &&  overlay="$VLAND_OVERLAY"
+
+  not_str  "$guest_name"    &&  guest_name="$3"
+  not_str  "$guest_name"    &&  guest_name="${guest##*/}"
+  not_str  "$guest_name"    &&  guest_name="$distro"
+
+  not_str  "$overlay_name"  &&  overlay_name="$4"
+  not_str  "$overlay_name"  &&  overlay_name="${overlay##*/}"
+  not_str  "$overlay_name"  &&  overlay_name="$guest_name"
+
+  not_str  "$guest"         &&  guest="$vland_dir/guest/$guest_name"
+  not_str  "$overlay"       &&  overlay="$vland_dir/overlay/$overlay_name"
+
   overlay_home="$overlay/${HOME#/}"  ;  }
 
 
-create_userland  ()  {    #  --------------------------------  create_userland
-  #  usage:  create_userland
+create_overlay  ()  {    #  ----------------------------------  create_overlay
+  #  usage:  create_overlay
+  is_dir  "$overlay"  &&  return
+  echo  'create_overlay  begin'
+  trace_mkdir_p  "$overlay"
+  echo  'create_overlay  done'  ;  }
+
+
+create_guest  ()  {    #  --------------------------------------  create_guest
+  #  usage:  create_guest
   case  "$distro"  in
     ( alpine      )  alpine_create       ;  return  ;;
     ( arch        )  arch_create         ;  return  ;;
@@ -223,19 +346,13 @@ create_userland  ()  {    #  --------------------------------  create_userland
   die  "vland  error  unsupported distro  '$distro'"  ;  }
 
 
-create_overlay  ()  {    #  ----------------------------------  create_overlay
-  #  usage:  create_overlay
-  echo  'create_overlay'
-  [ -d "$overlay" ]  &&  return
-  trace_mkdir_p  "$overlay"  ;  }
-
-
 create  ()  {    #  --------------------------------------------------  create
   #  usage:  create  --create  distro  [land]  [overlay]
+  echo  ;  echo  "vland  create  '$*'"
   create_init  "$@"
+  is_dir  "$guest"  &&  die  "vland  error  guest already exists  '$guest'"
   create_overlay
-  create_userland
-  echo  ;  echo  "vland  done  '$*'"  ;  }
+  create_guest  ;  }
 
 
 #  lxr & main_launch  -------------------------------------  lxr & main_launch
@@ -243,14 +360,14 @@ create  ()  {    #  --------------------------------------------------  create
 
 lxr_init_land  ()  {    #  ------------------------------------  lxr_init_land
   #  usage:  launch_init_land
-  [ -d "$guest" ]  ||  die  "vland  error  userland not found  '$guest_name'"
+  not_dir  "$guest"  &&  die  "vland  error  guest not found  '$guest_name'"
   #  todo  add $USER to /etc/passwd
-  return  ;  }
+  return  0  ;  }
 
 
 lxr_init_over  ()  {    #  ------------------------------------  lxr_init_over
   #  usage:  launch_init_over
-  [ -d "$overlay" ]  ||
+  not_dir  "$overlay"  &&
     die  "vland  error  overlay not found  '$overlay_name'"
   #  20211221  todo  read $HOME from $guest/etc/passwd
   #  20211227  todo  add  $USER to   $guest/etc/passwd
@@ -269,7 +386,7 @@ lxr_xauth_copy  ()  {    #  ----------------------------------  lxr_xauth_copy
 
 
 lxr_xauth  ()  {    #  ---------------------------------------------  lxr_auth
-  #  usage:  lxr_preapre  [option ...]  [-- command [arg ...]]
+  #  usage:  lxr_preapre  [option...]  [--  command  [arg...]]
   while  [ "$1" ]  ;  do
     case  "$1"  in
       ( --    )  return          ;;
@@ -281,21 +398,25 @@ lxr_xauth  ()  {    #  ---------------------------------------------  lxr_auth
 
 
 lxr_prepare  ()  {    #  ----------------------------------------  lxr_prepare
-  #  usage:  lxr_preapre  [option ...]  [-- command [arg ...]]
+  #  usage:  lxr_preapre  [option...]  [--  command  [arg...]]
   lxr_init_over
   lxr_init_land
   lxr_xauth  "$@"
-  lxroot_install  ;  }
+  lxroot_install
+  is_equal  "$vland_xray"  '1'  &&  xray  'lxr_prepare'
+  return  0  ;  }
 
 
 lxr  ()  {    #  --------------------------------------------------------  lxr
-  #  usage:  lxr_exec  [option ...]  [-- command [arg ...]]
-  lxr_prepare  "$@"  ;  "$lxroot"  "$guest"  "$overlay"  "$@"  ;  }
+  #  usage:  lxr_exec  [option...]  [--  command  [arg...]]
+  lxr_prepare  "$@"
+  $lxr_exec  "$lxroot"  "$guest"  "$overlay"  \
+    $squash_binds  $custom_options  "$@"  ;  }
 
 
 lxr_exec  ()  {    #  ----------------------------------------------  lxr_exec
-  #  usage:  lxr_exec  [option ...]  [-- command [arg ...]]
-  lxr_prepare  "$@"  ;  exec  "$lxroot"  "$guest"  "$overlay"  "$@"  ;  }
+  #  usage:  lxr_exec  [option...]  [--  command  [arg...]]
+  local  lxr_exec='exec'  ;  lxr  "$@"  ;  }
 
 
 main_launch_shift  ()  {    #  ----------------------------  main_launch_shift
@@ -306,14 +427,29 @@ main_launch_shift  ()  {    #  ----------------------------  main_launch_shift
 
 
 main_launch  ()  {    #  ----------------------------------------  main_launch
-  #  usage:  main_launch  over  [land]  [option ...]  [-- command ...]
-  overlay_parse  "$@"
-  main_launch_shift  "$1"  &&  shift    #  discard  over
-  main_launch_shift  "$1"  &&  shift    #  discard  land
+  #  usage:  main_launch  overlay  [option...]  [--  command  [arg...]]
+  fix_stdout
+  config_overlay  "$1"  ;  shift
+  is_function  launch_custom  &&  {  launch_custom  "$@"  ;  return  ;  }
   lxr_exec  "$@"  ;  }
 
 
 #  lib  -----------------------------------------------------------------  lib
+
+
+is_dir      ()  {  [ -d   "$1" ]  ;  }
+is_file     ()  {  [ -f   "$1" ]  ;  }
+is_str      ()  {  [      "$1" ]  ;  }
+not_dir     ()  {  [ ! -d "$1" ]  ;  }
+not_exists  ()  {  [ ! -e "$1" ]  ;  }
+not_file    ()  {  [ ! -f "$1" ]  ;  }
+not_str     ()  {  [ !    "$1" ]  ;  }
+
+echo_dir       ()  {  is_dir  "$1"  &&  echo  "$1"  ;  }
+echo_trace     ()  {  echo  ;  trace  "$@"  ;  }
+is_equal       ()  {  [ "$1" = "$2" ]  ;  }
+is_mountpoint  ()  {  mountpoint  -q  "$1"  ;  }
+not            ()  {  !  "$@"  ;  }
 
 
 aria2c_install  ()  {    #  ----------------------------------  aria2c_install
@@ -336,13 +472,6 @@ aria2c_install  ()  {    #  ----------------------------------  aria2c_install
   lib_download  "$url"  "$path"
   lib_verify    "$path"  "$sha"    sha256sum
   lib_verify    "$path"  "$b2"     b2sum  -l 256
-
-  #  20220112  todo
-  #  echo  ;  trace  which2  xz  ||  true
-  #  echo  ;  echo  "path  '$PATH'"
-  #  echo  ;  trace  md5sum  /usr/bin/tar
-  #  echo  ;  trace  tar  --version
-  #  echo
 
   trace_mkdir_p  "$bin_dir"
   trace  tar  xJf  "$path"  -C "$bin_dir"
@@ -368,7 +497,11 @@ die  ()  {    #  --------------------------------------------------------  die
 
 
 distro_detect  ()  {    #  ------------------------------------  distro_detect
+
   #  usage:  distro_detect
+
+  is_str  "$distro"  &&  echo  "vland  warn  distro already set  '$distro'"
+
   if  [ -e "$guest"/etc/os-release ]  ;  then
     local  line
     while  read  line  ;  do
@@ -377,11 +510,35 @@ distro_detect  ()  {    #  ------------------------------------  distro_detect
         ( ID=alpine                     )  distro='alpine'  ;;
         ( ID=arch                       )  distro='arch'    ;;
         ( ID=void | ID=[\'\"]void[\'\"] )  distro='void'    ;;  esac
-      done  <  "$guest"/etc/os-release  ;  fi  ;  }
+      done  <  "$guest"/etc/os-release  ;  fi
+
+  not_str  "$distro"  &&  echo  "vland  warn  distro_detect  failed"
+
+  return  0  ;  }
 
 
 distro_unsupported  ()  {    #  --------------------------  distro_unsupported
   echo  ;  echo  "vland  distro not supported  '$1'"  ;  exit  1  ;  }
+
+
+fix_stdout  ()  {    #  ------------------------------------------  fix_stdout
+  #  if    stdout or stderr appear to be closed
+  #  then  reopen them as /dev/null
+  [ -t 1 ]  ||  printf  '\0'        ||  exec  1<>  /dev/null
+  [ -t 2 ]  ||  printf  '\0'  1>&2  ||  exec  2<>  /dev/null  ;  }
+
+
+indent  ()  {    #  --------------------------------------------------  indent
+  #  usage:  indent  spacer
+  local  line  ;  while  read  line  ;  do  echo  "${1}${line}"  ;  done  }
+
+
+is_function  ()  {    #  ----------------------------------------  is_function
+  #  usage:  is_function  func_name
+  case  "$(  type  "$1"  )"  in
+    ( *' is a shell function' )  return  0  ;;    #  dash
+    esac
+  return  1  ;  }
 
 
 lib_download  ()  {    #  --------------------------------------  lib_download
@@ -506,28 +663,8 @@ mute  ()  {    #  ------------------------------------------------------  mute
   return  "$status"  ;  }
 
 
-overlay_parse  ()  {    #  ------------------------------------  overlay_parse
-
-  #  usage:  overlay_parse  overlay  [userland]
-
-  case  "$1"  in
-    ( '' | -* )  die  "vland  error  invalid overlay  '$1'"  ;;
-    ( *       )  overlay_name="$1"  ;;
-    esac
-
-  case  "$2"  in
-    ( '' | -* )  guest_name="$overlay_name"  ;;
-    ( *       )  guest_name="$2"  ;;
-    esac
-
-  [ "$vland_dir" ]  ||  die  "vland  internal error  vland_dir not set"
-
-  overlay="$vland_dir/overlay/$overlay_name"
-  guest="$vland_dir/guest/$guest_name"
-  overlay_home="$overlay/${HOME#/}"    #  a potentially unsafe assumption
-
-  [ -f "$overlay"/vland.conf ]  &&  .  "$overlay"/vland.conf
-  distro_detect  ;  }
+nl="$(  printf  '\n.'  )"    #  ------------------------------------------  nl
+readonly  nl="${nl%.}"
 
 
 pinwheel  ()  {    #  ----------------------------------------------  pinwheel
@@ -547,7 +684,7 @@ pinwheel  ()  {    #  ----------------------------------------------  pinwheel
 
 
 resolv_conf_sync  ()  {    #  ------------------------------  resolv_conf_sync
-  #  usage:  resolv_conf_sync  path/to/userland/etc/resolv.conf
+  #  usage:  resolv_conf_sync  $guest/etc/resolv.conf
   if  [ -h "$1" ]  ;  then  trace  rm  "$1"  ;  fi
   if  cmp  --silent  /etc/resolv.conf  "$1"  ;  then  return  ;  fi
   trace  cp  /etc/resolv.conf  "$1"  ;  }
@@ -590,27 +727,32 @@ which2  ()  {    #  --------------------------------------------------  which2
 
 xray  ()  {    #  ------------------------------------------------------  xray
 
-  #  usage:  xray  function_name  [arg ...]
+  #  usage:  xray  function_name  [arg...]
 
-  echo  "xray  $1"  ;  [ "$1" ]  &&  shift
-  echo  "  args   args          '$*'  $#"
-  echo  "  names  overlay_name  '$overlay_name'"
-  echo  "         guest_name    '$guest_name'"
-  echo  "         distro        '$distro'"
-  echo  "  paths  vland_dir     '$vland_dir'"
-  echo  "         overlay       '$overlay'"
-  echo  "         overlay_home  '$overlay_home'"
-  echo  "         guest         '$guest'"
-  echo  "         dist_path     '$dist_path'"
-  echo  "  real   vland_dir     '$(  realpath  -q  "$vland_dir"  )'"
-  echo  "         overlay       '$(  realpath  -q  "$overlay"       )'"
-  echo  "         guest         '$(  realpath  -q  "$guest"       )'"  ;  }
+  echo  "xray  $1"  ;  is_str  "$1"  &&  shift
+  echo  "  args    args            '$*'  $#"
+  echo  "  env     VLAND_GUEST     '$VLAND_GUEST'"
+  echo  "          VLAND_OVERLAY   '$VLAND_OVERLAY'"
+  echo  "  names   overlay_name    '$overlay_name'"
+  echo  "          guest_name      '$guest_name'"
+  echo  "          distro          '$distro'"
+  echo  "  paths   vland_dir       '$vland_dir'"
+  echo  "          vland_mnt       '$vland_mnt'"
+  echo  "          overlay         '$overlay'"
+  echo  "          overlay_home    '$overlay_home'"
+  echo  "          guest           '$guest'"
+  echo  "          dist_path       '$dist_path'"
+  echo  "  real    vland_dir       '$(  realpath  -q  "$vland_dir"  )'"
+  echo  "          overlay         '$(  realpath  -q  "$overlay"       )'"
+  echo  "          guest           '$(  realpath  -q  "$guest"       )'"
+  echo  "  binds   squash_binds    '$squash_binds'"
+  echo  "  custom  custom_options  '$custom_opts'"  ;  }
 
 
 #  pkg  -----------------------------------------------------------------  pkg
 
 
-pkg_aur  ()  {    #  ------------------------------------------------  pkg_aur
+pkg_parse_aur  ()  {    #  ------------------------------------  pkg_parse_aur
   case  "$distro"  in
     ( arch )  distro='arch_aur'  ;;
     ( *    )  die  "vland --aur  invalid distro  '$distro'"  ;;  esac  }
@@ -618,75 +760,197 @@ pkg_aur  ()  {    #  ------------------------------------------------  pkg_aur
 
 pkg_parse  ()  {    #  --------------------------------------------  pkg_parse
 
-  case  "$#"  in
-    (1)  die  "vland --pkg  invalid overlay  ''"  ;;
-    (2)  die  "vland --pkg  invalid action  ''"  ;;  esac
+  #  usage:  pkg  --pkg  overlay  action  package...
 
-  case  "$4"  in
-    ( update | install | deps | build | build_install )
-      overlay_parse  "$2"  "$3"  ;  action="$4"  shift='4'  ;;
-    ( * )
-      overlay_parse  "$2"        ;  action="$3"  shift='3'  ;;
-    esac
+  config_overlay  "$2"    #  will call detect_distro
 
-  [ "$distro" = 'void-musl'     ]  &&  distro='void'
-  [ "$action" = 'build-install' ]  &&  action='build_install'
+  is_equal  "$distro"  'void-musl'  &&  distro='void'
+  is_equal  "$1"       '--aur'      &&  pkg_parse_aur
 
-  [ "$1" = '--aur' ]  &&  pkg_aur  ;  return  0  ;  }
+  action="$3"
+  case  "$action"  in
+    ( update | install | deps | build | build_install | build_clean )  ;;
+    ( build-install )  action='build_install'  ;;
+    ( build-clean   )  action='build_clean'    ;;
+    ( * )  die  "vland $1  invalid action  '$action'"  ;;  esac  }
 
 
 pkg_sanity  ()  {    #  ------------------------------------------  pkg_sanity
 
-  [ -d "$overlay" ]  ||  die  "vland --pkg  overlay not found  '$overlay_name'"
-  [ -d "$guest"   ]  ||  die  "vland --pkg  guest not found  '$guest_name'"
+  not_dir  "$guest"    && die "vland --pkg  guest not found  '$guest_name'"
+  not_dir  "$overlay"  && die "vland --pkg  overlay not found  '$overlay_name'"
 
   case  "$distro"  in
     ( alpine | arch | arch_aur | void )  ;;
     ( * )  die  "vland --pkg  invalid distro  '$distro'"  ;;  esac
 
   case  "$action"  in
-    ( update | install | upgrade | deps | build | build_install )  ;;
+    ( update | install | upgrade | deps )  ;;
+    ( build | build_install | build_clean )  ;;
     ( * )  die  "vland --pkg  invalid action  '$action'"  ;;  esac  ;  }
 
 
 pkg_prelude  ()  {    #  ----------------------------------------  pkg_prelude
-  case  "$distro"  in  ( alpine | arch | arch_aur | void | void_musl )
+
+  #  20220118
+  #  case  "$distro"  in  ( alpine | arch | arch_aur | void | void_musl )
     #  case  "$action"  in  ( update | install | deps | build | build_install )
     #    pkg_try  "$distro"_pkg_prepare  ;;  esac
-    case  "$action"  in  ( update )
-      "$distro"_pkg_update  ;;  esac
+
+  case  "$action"  in  ( update )
+    "$distro"_pkg_update  ;;  esac
+
+  case  "$action"  in  ( deps | build | build_install )
+    "$distro"_pkg_build_prepare  ;;  esac  }
+
+
+pkg_single  ()  {    #  ------------------------------------------  pkg_single
+  #  usage:  pkg_single  --pkg  overlay  action  package...
+  pkg_sanity  ;  shift  3
+  case  "$action"  in  ( update | install | build_clean )
+    "$distro"_pkg_"$action"  "$@"  ;;  esac  }
+
+
+pkg_loop  ()  {    #  ----------------------------------------------  pkg_loop
+  #  usage:  pkg_loop  --pkg  overlay  action  package...
+  pkg_sanity  ;  shift  3
+  while  [ "$1" ]  ;  do
+    local  pkg="$1"  ;  shift
     case  "$action"  in  ( deps | build | build_install )
-      "$distro"_pkg_build_prepare  ;;  esac  ;;  esac  ;  }
-
-
-pkg_packages  ()  {    #  --------------------------------------  pkg_packages
-  #  usage:  pkg  --pkg  overlay  [guest]  action  [--]  package
-  shift  "$shift"  ;  [ "$1" = '--' ]  &&  shift
-  ###  echo  "pkg_packages  '$*'"
-  case  "$distro"  in  ( alpine | arch | arch_aur | void | void_musl )
-    while  [ "$1" ]  ;  do
-      local  pkg="$1"  ;  shift
-      case  "$action"  in  ( install )
-        "$distro"_pkg_install  "$pkg"  ;;  esac
-      case  "$action"  in  ( deps | build | build_install )
-        "$distro"_pkg_deps  "$pkg"  ;;  esac
-      case  "$action"  in  ( build | build_install )
-        "$distro"_pkg_build  "$pkg"  ;;  esac
-      case  "$action"  in  ( build_install )
-        "$distro"_pkg_build_install  "$pkg"  ;;  esac
-      done  ;  esac  ;  }
+      "$distro"_pkg_deps  "$pkg"  ;;  esac
+    case  "$action"  in  ( build | build_install )
+      "$distro"_pkg_build  "$pkg"  ;;  esac
+    case  "$action"  in  ( build_install )
+      "$distro"_pkg_build_install  "$pkg"  ;;  esac
+    case  "$action"  in  ( build_clean )
+      "$distro"_pkg_build_clean  "$pkg"  ;;  esac  ;  done  }
 
 
 pkg  ()  {    #  --------------------------------------------------------  pkg
-  #  usage:  pkg  --pkg  overlay  [guest]  action  [--]  package
-  [ "$distro" ]  &&  die  "pkg  internal error  distro  '$distro'"
+  #  usage:  pkg  --pkg  overlay  action  package...
+  echo  ;  echo  "vland  $1  $2  $3  $4  (+$(( $# - 4 )))"
   local  action  shift
-  pkg_parse     "$@"
+  pkg_parse    "$@"
   pkg_sanity
-  pkg_prelude   "$@"
-  pkg_packages  "$@"  ;  }
+  pkg_prelude
+  case  "$action"  in
+    ( update | install )  pkg_single  "$@"  ;;
+    ( *                )  pkg_loop    "$@"  ;;  esac  }
 
 
+#  squash  -----------------------------------------------------------  squash
+
+
+squash_active_find  ()  {    #  --------------------------  squash_active_find
+  #  usage:  squash_detect_active  rel_dir
+  local  dir="${squash}${1#.}"
+  [ -f "$dir"/active ]  &&  {  active="$dir"/active  ;  return  ;  }
+  local  path  found  ;  for  path  in  "$dir"/*  ;  do
+    not_exists  "$path"   &&  continue    #  wildcard failed to match
+    is_dir      "$path"   &&  continue    #  skip directories
+    is_str      "$found"  &&  die  "vland  error  multiple files  '$dir'"
+    found="$path"  ;  done
+  active="$found"  ;  }
+
+
+squash_mount_app  ()  {    #  ------------------------------  squash_mount_app
+
+  #  usage:  squash_mount_sfs  src  dst
+
+  local  src="$1"  dst="$2"
+
+  #s_mountpoint  "$dst"  &&  echo  "app  found  ${dst##*/}"
+  is_mountpoint  "$dst"  &&  return
+
+  echo  ;  echo  "squash_mount_app  '$src'"
+
+  local  grep="$(
+    grep  --byte-offset  --only-matching  --text 'hsqs'  "$src"  )"
+
+  local  match  offset
+  for  match  in  $grep  ;  do
+    echo  "squash_mount_app  match  '$match'"
+    case  "$match"  in
+      ( '188392:hsqs' )  offset=188392  ;;  esac  ;  done
+
+  not_str  "$offset"  &&  die  'vland  offset detection faild'
+
+  echo  "squash_mount_app  offset  '$offset'"
+  trace_mkdir_p  "$dst"
+  echo_trace  sudo  -k  mount  -o offset="$offset"  "$src"  "$dst"  ;  }
+
+
+squash_mount_sfs  ()  {    #  ------------------------------  squash_mount_sfs
+  #  usage:  squash_mount_sfs  src  dst
+  local  src="$1"  dst="$2"
+  #s_mountpoint  "$dst"  &&  echo  "sfs  found  ${dst##*/}"
+  is_mountpoint  "$dst"  &&  return
+  echo  ;  echo  "squash_mount_sfs  '$src'"
+  trace_mkdir_p  "$dst"
+  echo_trace  sudo  -k  mount  "$src"  "$dst"  ;  }
+
+
+squash_has_bindpoint  ()  {    #  ----------------------  squash_has_bindpoint
+  #  usage  squash_has_bindpoint  dir_relative
+  is_equal    "$rel"  '.'       &&  return
+  is_dir      "$overlay${1#.}"  &&  return
+  not_dir  "$guest"          &&  return  1
+  is_dir      "$guest${1#.}"    &&  return
+  return  1  ;  }
+
+
+squash_bind  ()  {    #  ----------------------------------------  squash_bind
+  #  usage:  squash_bind  src  dir_relative
+  local  src="$1"  rel="$2"  dst
+  case  "$rel"  in
+    ( '.' )  dst='/'  ;;
+    ( *   )  dst="${rel#.}"  ;;  esac
+  squash_binds="$squash_binds  ${nl}bind  ra  $dst  $src"  ;  }
+
+
+squash_detect_dir  ()  {    #  ----------------------------  squash_detect_dir
+
+  #  usage:  squash_detect_dir  dir_relative
+
+  not  squash_has_bindpoint  "$1"  &&  {  echo  "skip  '$1'"  ;  return  ;  }
+
+  local  dir_relative="$1"
+  local  active  ;  squash_active_find  "$dir_relative"
+  local  mountpoint="$vland_mnt/${active##*/}"
+  local  bind_to="$dir_relative"
+  local  dst_guest="$(  echo  "${guest}${dir_relative#.}"  )"
+  local  dst_overlay="$(  echo  "${overlay}${dir_relative#.}"  )"
+
+  not_file  "$active"  &&  return
+
+  false  &&  {
+    echo
+    echo  "  squash  found"
+    echo  "    active        '$active'"
+    echo  "    mountpoint    '$mountpoint'"
+    echo  "    dir_relative  '$dir_relative'"
+    echo  "    dst_guest     '$dst_guest'"
+    echo  "    dst_overlay   '$dst_overlay'"  ;  }
+
+  case  "$active"  in
+    ( *.AppImage )  squash_mount_app  "$active"  "$mountpoint"  ;;
+    ( *.sfs      )  squash_mount_sfs  "$active"  "$mountpoint"  ;;
+    ( *          )  die  "vland  cannot mount  '$active'"  ;;  esac
+
+  case  "$dir_relative"  in
+    ( '.' )  guest="$mountpoint"  ;;
+    ( *   )  squash_bind  "$mountpoint"  "$dir_relative"  ;;
+    esac
+
+  return  0  ;  }
+
+
+squash_detect  ()  {    #  ------------------------------------  squash_detect
+  #  usage:  squash_detect
+  squash="$vland_dir"/squash/"$overlay_name"
+  not_dir  "$squash"  &&  return
+  local  dir  ;  for  dir  in  `cd  "$squash"  &&  find  .  -type d`
+    do  squash_detect_dir  "$dir"  ;  done  }
 
 
 #  distro  ===========================================================  distro
@@ -730,8 +994,7 @@ alpine_verify  ()  {    #  ------------------------------------  alpine_verify
 
 alpine_extract  ()  {    #  ----------------------------------  alpine_extract
   #  usage:  alpine_extract
-  [ -e "$guest" ]  &&
-    die  "vland  error  userland already exists  '$guest'"
+  [ -e "$guest" ]  &&  die  "vland  error  guest already exists  '$guest'"
   alpine_download
   alpine_verify
   echo  ;  echo  'alpine_extract'
@@ -766,11 +1029,11 @@ alpine_pkg_prepare_aports  ()  {    #  ------------  alpine_pkg_prepare_aports
   local  tbz_path="$overlay_home/$tbz"
   local  aports="$overlay_home/aports"
 
-  [ -e "$tbz_path" ]  &&  echo  "alpine_build  found  '$tbz_path'"
+  [ -e "$tbz_path" ]  &&  echo  "alpine_pkg_prepare_aports  found  '$tbz_path'"
   lib_download  "$url"  "$tbz_path"
 
   if  [ -e "$overlay_home"/aports ]
-    then  echo  "alpine_build  found  '$overlay_home/aports'"
+    then  echo  "alpine_pkg_prepare_aports  found  '$overlay_home/aports'"
     else  trace  tar  xjf "$tbz_path"  -C "$overlay_home"
           trace  mv  "$overlay_home"/aports-master  "$overlay_home"/aports
           fi  ;  }
@@ -779,16 +1042,17 @@ alpine_pkg_prepare_aports  ()  {    #  ------------  alpine_pkg_prepare_aports
 alpine_pkg_prepare_keygen  ()  {    #  ------------  alpine_pkg_prepare_keygen
   #  usage:  self
   local  conf="$overlay/$HOME"/.abuild/abuild.conf
-  [ -e "$conf" ]  &&  {  echo  "alpine_build  found  '$conf'"  ;  return  ;  }
-  vland  "$overlay_name"  "$guest_name"  --  abuild-keygen  --append  -n
+  is_file  "$conf"  &&
+    {  echo  "alpine_pkg_prepare_keygen  found  '$conf'"  ;  return  ;  }
+  vland  "$overlay_name"  --  abuild-keygen  --append  -n
   trace  cp  "$overlay/$HOME"/.abuild/*.rsa.pub  "$guest"/etc/apk/keys/  ;  }
 
 
 alpine_pkg_prepare_sdk  ()  {    #  ------------------  alpine_pkg_prepare_sdk
   #  usage:  self
   local  abuild_path="$guest/usr/bin/abuild"
-  if  [ -e "$abuild_path" ]
-    then  echo  "alpine_build  found  '$abuild_path'"
+  if  is_file  "$abuild_path"
+    then  echo  "alpine_pkg_prepare_sdk  found  '$abuild_path'"
     else  trace  lxr  -nr  --  apk  update
           trace  lxr  -nr  --  apk  add  alpine-sdk  ;  fi
   #  redirect symlinks to remove abuild privilege escalation
@@ -802,8 +1066,7 @@ alpine_pkg_update  ()  {    #  ----------------------------  alpine_pkg_update
 
 
 alpine_pkg_install  ()  {    #  --------------------------  alpine_pkg_install
-  #  usage:  alpine_pkg_install  package_name
-  lxr  -nr  --  apk  add  "$1"  ;  }
+  trace  lxr  -nr  --  apk  add  "$@"  ;  }
 
 
 alpine_pkg_build_prepare  ()  {    #  --------------  alpine_pkg_build_prepare
@@ -870,19 +1133,19 @@ arch_vars_set  ()  {    #  ------------------------------------  arch_vars_set
 arch_download  ()  {    #  ------------------------------------  arch_download
   #  usage:  arch_download
   arch_vars_set
-  echo  ;  echo  "arch_download  $dist_path"
+  echo  "arch_download   dist_path  '$dist_path'"
   lib_download_multi  "$arch_web_seeds"  "$tgz_ver/$tgz"  "$dist_path"
-  echo  "arch_download  done"  ;  }
+  echo  "arch_download   done"  ;  }
 
 
 arch_verify  ()  {    #  ----------------------------------------  arch_verify
   #  usage:  arch_verify
   arch_vars_set
-  echo  ;  echo  "arch_verify  $dist_path"
+  echo  "arch_verify     dist_path  '$dist_path'"
   lib_verify  "$dist_path"  "$tgz_md5"     md5sum
   lib_verify  "$dist_path"  "$tgz_sha1"    sha1sum
   lib_verify  "$dist_path"  "$tgz_b2"      b2sum  -l 256
-  echo  'arch_verify  done'  ;  }
+  echo  'arch_verify     done'  ;  }
 
 
 arch_tar_failed  ()  {    #  --------------------------------  arch_tar_failed
@@ -911,18 +1174,17 @@ arch_extract  ()  {    #  --------------------------------------  arch_extract
 
   #  usage:  arch_extract
 
-  [ -e "$guest" ]  &&
-    die  "vland  error  userland already exists  '$guest'"
+  [ -e "$guest" ]  &&  die  "vland  error  guest already exists  '$guest'"
 
   arch_download
   arch_verify
 
-  echo  ;  echo  'arch_extract'
+  echo  'arch_extract    begin'
   trace  mkdir  -p  "$guest"
   local  opts='--delay-directory-restore  --strip-components=1'
   trace  tar  xzf "$dist_path"  -C "$guest"  $opts  ||  arch_tar_failed
   trace  chmod  u+w  "$guest/etc/ca-certificates/extracted/cadir"
-  echo  'arch_extract  done'
+  echo  'arch_extract    done'
 
   return  ;  }
 
@@ -933,7 +1195,7 @@ arch_configure  ()  {    #  ----------------------------------  arch_configure
 
   lxroot_install
 
-  echo  ;  echo  'arch_configure  ...'  ;  echo
+  echo  'arch_configure  begin'
 
   #  20211219  todo  copy localtime from host rather than using Los_Angeles?
 
@@ -944,22 +1206,30 @@ arch_configure  ()  {    #  ----------------------------------  arch_configure
   echo  "$mirror"  \
     |  trace  dd  of="$guest"/etc/pacman.d/mirrorlist  status=none
 
-  echo  ;  trace  lxr  -nr  --  pacman-key  --init
-  echo  ;  trace  lxr  -nr  --  pacman-key  --populate  archlinux
+  trace  lxr  -nr  --  pacman-key  --init
+  trace  lxr  -nr  --  pacman-key  --populate  archlinux
 
-  echo  ;  echo  'arch_configure  done'  ;  }
+  echo  'arch_configure  done'  ;  }
 
 
 arch_create  ()  {    #  ----------------------------------------  arch_create
   #  usage:  arch_create
-  echo  ;  echo  'arch_create'
+  echo  'arch_create     begin'
   arch_vars_set
   arch_extract
   arch_configure
-  echo  ;  echo  'arch_create  done'  ;  }
+  echo  'arch_create     done'  ;  }
 
 
 #  arch_pkg  -------------------------------------------------------  arch_pkg
+
+
+#  pacman
+#    -S  synchronize (i.e. intall) packages
+#    -U  upgrade (or add) packages
+#    -y  refresh (i.e. update) package database
+#    --needed       do not reinstall
+#    --noconfirm    do not confirm
 
 
 arch_pkg_find  ()  {    #  ------------------------------------  arch_pkg_find
@@ -987,7 +1257,7 @@ arch_pkg_update  ()  {    #  --------------------------------  arch_pkg_update
 
 
 arch_pkg_install  ()  {    #  ------------------------------  arch_pkg_install
-  trace  lxr  -nr  --  pacman  -Sy  --noconfirm  "$1"  ;  }
+  trace  lxr  -nr  --  pacman  -Sy  --needed  --noconfirm  "$@"  ;  }
 
 
 arch_pkg_build_prepare  ()  {    #  ------------------  arch_pkg_build_prepare
@@ -997,19 +1267,20 @@ arch_pkg_build_prepare  ()  {    #  ------------------  arch_pkg_build_prepare
 
 arch_pkg_deps  ()  {    #  ------------------------------------  arch_pkg_deps
   #  usage:  arch_pkg_deps  package_name
-  trace  lxr  --  mkdir  -p  vland-build
-  [ -e "$overlay_home"/vland-build/"$1" ]  ||
-    trace  lxr  -n   cd vland-build  --  asp  checkout  "$1"
+  local  build="$overlay_home"/vland-build
+  is_dir  "$build/$1"  &&  {
+    echo  "arch_pkg_deps   found dir  'vland-build/$1'"  ;  return  ;  }
+  trace_mkdir_p  "$build"
+  trace  lxr  -n   cd vland-build  --  asp  checkout  "$1"
   trace  lxr  -nw  cd vland-build/"$1"/trunk  \
-    --  makepkg  --noconfirm  --syncdeps  --noextract  --nobuild  ;  }
+    --  makepkg  --syncdeps  --noconfirm  --noextract  --nobuild  ;  }
 
 
 arch_pkg_build  ()  {    #  ----------------------------------  arch_pkg_build
   #  usage:  arch_pkg_build_one  package_name
-  [ "$(  arch_pkg_find  "$1"  )" ]  &&  {
-    echo  ;  echo  "vland  found package(s) for '$1'"
-    echo  ;  trace  ls  -lh  "$overlay_home"/vland-build/"$1"/trunk/
-    echo  ;  return  ;  }
+  local  found="$(  arch_pkg_find  "$1"  )"
+  is_str  "$found"  &&  {
+    echo  "arch_pkg_build  found pkg  '$found'"  ;  return  ;  }
   trace  lxr  -n  cd vland-build/"$1"/trunk  --  makepkg  --skippgpcheck  ;  }
 
 
@@ -1020,7 +1291,16 @@ arch_pkg_build_install  ()  {    #  ------------------  arch_pkg_build_install
     echo  'arch_build_install_package  strange, no packages found'
     return  ;  }
   trace  lxr  -r  cd "$HOME"/vland-build/"$1"/trunk  \
-    --  pacman  -U  --noconfirm  $pkgs  ;  }
+    --  pacman  -U  --needed  --noconfirm  $pkgs  ;  }
+
+
+arch_pkg_build_clean  ()  {    #  ----------------------  arch_pkg_build_clean
+  local  pkg="$overlay_home"/vland-build/"$1"/trunk/pkg
+  local  src="$overlay_home"/vland-build/"$1"/trunk/src
+  not_dir  "$overlay_home"  &&  return
+  is_dir   "$pkg"           &&  trace  rm  -rf  "$pkg"
+  is_dir   "$src"           &&  trace  rm  -rf  "$src"
+  return  0  ;  }
 
 
 #  arch_aur_pkg  -----------------------------------------------  arch_aur_pkg
@@ -1042,24 +1322,29 @@ arch_aur_pkg_deps  ()  {    #  ----------------------------  arch_aur_pkg_deps
 
   #  usage:  arch_aur_pkg_deps  package_name
 
+  local  build="$overlay_home"/vland-build
+  is_dir  "$build/$1"  &&  {
+    echo  "arch_aur_pkg_deps   found dir  'vland-build/$1'"  ;  return  ;  }
+
   local  url='https://aur.archlinux.org/cgit/aur.git/snapshot'
   local  url="${url}/${1}.tar.gz"
   local  dir="$overlay_home"/vland-build
   local  dst="$dir/${url##*/}"
 
-  [ -e "$dst" ]  ||
+  not_file  "$dst"  &&
     trace  curl  --location  --create-dirs  --output "$dst"  "$url"
 
-  [ -d "$dir/$1" ]  ||  trace  tar  xzf "$dst"  -C "$dir"
+  not_dir  "$dir/$1"  &&  trace  tar  xzf "$dst"  -C "$dir"
 
   trace  lxr  -nw  cd vland-build/"$1"  \
-    --  makepkg  --noconfirm  --syncdeps  --noextract  --nobuild  ;  }
+    --  makepkg  --syncdeps  --noconfirm  --noextract  --nobuild  ;  }
 
 
 arch_aur_pkg_build  ()  {    #  --------------------------  arch_aur_pkg_build
   #  usage:  arch_aur_pkg_build  package_name
-  [ "$(  arch_aur_find  "$1"  )" ]  &&  {
-    echo  "arch_aur_build_one  package(s) found for '$1'"  ;  return  ;  }
+  local  found="$(  arch_aur_find  "$1"  )"
+  is_str  "$found"  &&  {
+    echo  "arch_aur_pkg_build  found pkg  '$found'"  ;  return  ;  }
   trace  lxr  -n  cd vland-build/"$1"  --  makepkg  --skippgpcheck  ;  }
 
 
@@ -1070,7 +1355,16 @@ arch_aur_pkg_build_install  ()  {    #  ----------  arch_aur_pkg_build_install
     echo  'arch_aur_build_install_one  strange, no packages found'
     return  ;  }
   trace  lxr  -r  cd "$HOME"/vland-build/"$1"  \
-    --  pacman  -U  --noconfirm  $pkgs  ;  }
+    --  pacman  -U  --needed  --noconfirm  $pkgs  ;  }
+
+
+arch_aur_pkg_build_clean  ()  {    #  --------------  arch_aur_pkg_build_clean
+  local  pkg="$overlay_home"/vland-build/"$1"/pkg
+  local  src="$overlay_home"/vland-build/"$1"/src
+  not_dir  "$overlay_home"  &&  return
+  is_dir   "$pkg"           &&  trace  rm  -rf  "$pkg"
+  is_dir   "$src"           &&  trace  rm  -rf  "$src"
+  return  0  ;  }
 
 
 #  ubuntu_2110  -------------------------------------------------  ubuntu_2110
@@ -1126,8 +1420,8 @@ ubuntu_2110_verify  ()  {    #  --------------------------  ubuntu_2110_verify
   echo  ;  echo  'void_verify'
   void_vars_set
   #  20220106
-  #  lib_verify  -v  "$iso_path"  "$iso_sha"    sha256sum
-  #  lib_verify  -v  "$iso_path"  "$iso_b2"     b2sum  -l 256
+  lib_verify  -v  "$iso_path"  "$iso_sha"    sha256sum
+  lib_verify  -v  "$iso_path"  "$iso_b2"     b2sum  -l 256
   return  ;  }
 
 
@@ -1135,8 +1429,7 @@ ubuntu_2110_extract  ()  {    #  ------------------------  ubuntu_2110_extract
 
   #  usage:  ubuntu_2110_extract
 
-  [ -e "$guest" ]  &&
-    die  "vland  error  userland already exists  '$guest'"
+  [ -e "$guest" ]  &&  die  "vland  error  guest already exists  '$guest'"
 
   ubuntu_2110_download
   ubuntu_2110_verify
@@ -1210,8 +1503,7 @@ void_verify  ()  {    #  ----------------------------------------  void_verify
 
 void_extract  ()  {    #  --------------------------------------  void_extract
   #  usage:  void_extract
-  [ -e "$guest" ]  &&
-    die  "vland  error  userland already exists  '$guest'"
+  [ -e "$guest" ]  &&  die  "vland  error  guest already exists  '$guest'"
   void_download
   void_verify
   echo  ;  echo  'void_extract'
@@ -1278,8 +1570,7 @@ void_musl_create  ()  {    #  ------------------------------  void_musl_create
 
 
 void_pkg_install  ()  {    #  ------------------------------  void_pkg_install
-  #  usage:  void_pkg_install  package_name
-  trace  lxr  -nr  --  xbps-install  --sync  --yes  "$1"  ;  }
+  trace  lxr  -nr  --  xbps-install  --sync  --yes  "$@"  ;  }
 
 
 #  self_test  -----------------------------------------------------  self_test
@@ -1333,7 +1624,7 @@ self_test  ()  {    #  --------------------------------------------  self_test
   echo  '\=========================================================/'  ;  }
 
 
-self_test_full_distro  ()  {    #  --------------------  self_test_full_distro
+self_test_full_distro  ()  (    #  --------------------  self_test_full_distro
 
   #  usage  self_test_full_distro  distro
 
@@ -1342,7 +1633,7 @@ self_test_full_distro  ()  {    #  --------------------  self_test_full_distro
 
   [ -d "$vland_dir"/guest/"$gn" ]  ||  trace  vland  --create  "$distro"  "$gn"
 
-  trace  overlay_parse  "$gn"    #  to set $overlay_home
+  trace  config_overlay  "$gn"    #  to set $overlay_home
   trace  mkdir  -p  "$overlay_home"
   trace  cp  "$VLAND_EXE"  "$overlay_home"/vland
 
@@ -1355,7 +1646,7 @@ self_test_full_distro  ()  {    #  --------------------  self_test_full_distro
   [ "$pkgs" ]  &&  trace  vland  --pkg  "$gn"  install  $pkgs
   trace  vland  "$gn"  -n  --  /bin/sh  ./vland  --self-test
   mute   self_test_clean
-  return  ;  }
+  return  ;  )
 
 
 self_test_full  ()  {    #  ----------------------------------  self_test_full
@@ -1637,7 +1928,15 @@ arch_web_seeds='
 #  main  ---------------------------------------------------------------  main
 
 
-main  "$@"
+main_fix  ()  {    #  ----------------------------------------------  main_fix
+  case  "$1"  in
+    ( --* )  ;;
+    ( -*  )  local a="$1" b="$2"; shift 2; set "$b" "$a" "$@"  ;;
+    ( *   )  ;;  esac
+  main  "$@"  ;  exit  0  ;  }
+
+
+main_fix  "$@"  ;  exit  0
 
 
 
