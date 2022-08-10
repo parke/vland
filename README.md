@@ -3,7 +3,7 @@
 
 ### About `vland`
 
-`vland` is a virtual userland manager for x86_64 Linux, written in Dash shell.
+`vland` is a virtual userland manager for x86_64 Linux, written in Bash shell.
 
 `vland` allows non-root users, on x86_64 Linux systems, to install "virtual userlands" and then run programs (or build packages) inside those userlands.  More specifically:
 
@@ -29,7 +29,7 @@ $  /bin/sh  vland  --pkg  arch-guest  build-install  lua
 $  /bin/sh  vland  arch-guest  --  lua  -v
 ```
 
-`vland` is a Dash shell script.  The actual virtual environment is created by [`lxroot`](https://github.com/parke/lxroot).  `lxroot` is a small C++ program. 
+`vland` is a Bash shell script.  The actual virtual environment is created by [`lxroot`](https://github.com/parke/lxroot).  `lxroot` is a small C++ program. 
  Both run without root access.  `vland` is, more or less, an opinionated, high-level convenience wrapper around `lxroot`, with some added bells and whistles.
 
 Learn more by reading the [**`vland` tutorial**](https://github.com/parke/vland/wiki/tutorial) and the [**`lxroot` tutorial**](https://github.com/parke/lxroot/wiki/tutorial).
@@ -45,10 +45,14 @@ The below table summarizes the Linux distributions that I have used as guests wi
 
 |  Guest distro  |  Can install as guest?  |  Can install packages?  |  Can build packages?  |
 |  :--           |  :-:                    |  :-:                    |  :-:                  |
-|  Alpine        |  yes                    |  yes                    |  yes                  |
 |  Arch          |  yes                    |  yes                    |  yes                  |
-|  Ubuntu        |  work in progress       |  work in progress       |  probably             |
-|  Void          |  yes                    |  yes                    |  probably             |
+|  Ubuntu        |  yes (but see note)     |  yes                    |  work in progress     |
+
+Note:  At present, in order to install an Ubuntu guest, the host must have the `apt-get` program installed.  On an Arch host, it may be possible to install `apt-get` from the `apt` package in the AUR.  (I have not tested this.)
+
+###  Other Linux distributions
+
+In the past, `vland` also supported Alpine and Void guests.  However, support for Alpine and Void has been retired so I can focus on support for Ubuntu and Arch.
 
 Other Linux distributions may also work inside `lxroot`.  (Some level of custom shimming may be required.)
 
@@ -62,4 +66,4 @@ Due to `lxroot`'s safety, simplicity, efficiency, and ability to run without roo
 -  [**man page**](https://github.com/parke/vland/wiki/man_page)
 -  [**wiki**](https://github.com/parke/lxroot/wiki)
 
-<!--  version  20220119.1  -->
+<!--  version  20220810  -->
